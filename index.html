@@ -175,6 +175,12 @@
         <button id="alunaNew" type="button" title="Nova aluna">+ Nova</button>
         <button id="alunaDel" type="button" title="Excluir aluna">Excluir</button>
       </div>
+      <div class="aluna-row">
+        <select id="modeSelect" title="Padrão pra minutos ambíguos (sem 'trote'/'caminhada' no texto)">
+          <option value="cam">Modo: Caminhada</option>
+          <option value="trote">Modo: Corrida (ritmo/Km)</option>
+        </select>
+      </div>
     </div>
   </header>
 
@@ -251,38 +257,59 @@
 (function(){
   "use strict";
 
-  /* ---------------- Parser: texto do treino -> minutos ---------------- */
+  /* ---------------- Parser: texto do treino -> minutos ----------------
+     "mode" é o padrão do aluno pra minutos ambíguos (sem palavra-chave
+     trote/corrida/caminhada por perto): 'cam' (plano de caminhada/adaptação,
+     ex. aluna) ou 'trote' (plano de corrida por ritmo/Km, ex. aluna). */
   function parseTime(s){
     if(s.indexOf(':')>-1){var p=s.split(':');return (parseInt(p[0],10)||0)+(parseInt(p[1],10)||0)/60;}
     return parseFloat(s)||0;
   }
-  function sumDurations(text){
+  function classify(ctx,mode){
+    if(/trot|corr/.test(ctx)) return 'trote';
+    if(/caminhada|caminhando/.test(ctx)) return 'cam';
+    return mode==='trote' ? 'trote' : 'cam';
+  }
+  function sumDurations(text,mode){
     var cam=0,trote=0,re=/(\d+(?::\d+)?)\s*min\b([^+\d]*)/g,m;
     while((m=re.exec(text))!==null){
       var d=parseTime(m[1]),ctx=(m[2]||'');
-      if(/trot|corr/.test(ctx)) trote+=d;
+      if(classify(ctx,mode)==='trote') trote+=d;
       else cam+=d;
     }
     return {cam:cam,trote:trote};
   }
-  function parseWorkout(text){
+  function parseWorkout(text,mode){
     if(!text||!text.trim()) return {cam:0,trote:0};
+    mode = mode==='trote' ? 'trote' : 'cam';
     var t=(' '+text+' ').toLowerCase().replace(/,/g,'.');
     var cam=0,trote=0;
-    // blocos com repetição: N x (...)
+    // blocos com repetição entre parênteses: N x (...)
     t=t.replace(/(\d+)\s*x\s*\(([^)]*)\)/g,function(_,n,inner){
-      var r=sumDurations(inner); cam+=(+n)*r.cam; trote+=(+n)*r.trote; return ' ';
+      var r=sumDurations(inner,mode); cam+=(+n)*r.cam; trote+=(+n)*r.trote; return ' ';
+    });
+    // blocos de intervalo sem parênteses: N x TRABALHOmin ... Desc.: DESCANSOmin
+    t=t.replace(/(\d+)\s*x\s*(\d+(?::\d+)?)\s*min\b[\s\S]*?desc\.?:\s*(\d+(?::\d+)?)\s*min/g,function(m0,n,work,rest){
+      var total=(+n)*(parseTime(work)+parseTime(rest));
+      if(classify(m0,mode)==='trote') trote+=total; else cam+=total;
+      return ' ';
     });
     // blocos contínuos alternados: X min (...)
     t=t.replace(/(\d+(?::\d+)?)\s*min\s*\(([^)]*)\)/g,function(_,dur,inner){
-      var tot=parseTime(dur),r=sumDurations(inner),sub=r.cam+r.trote;
+      var tot=parseTime(dur),r=sumDurations(inner,mode),sub=r.cam+r.trote;
       if(sub>0){cam+=tot*r.cam/sub;trote+=tot*r.trote/sub;} return ' ';
     });
+    // distância em Km com ritmo: N km (M:SS) — plano de corrida por pace
+    t=t.replace(/(\d+(?:\.\d+)?)\s*km?\.?\s*(?:z\d\s*)?\(?(\d{1,2}:\d{2})\)?/g,function(m0,km,pace){
+      var mins=parseFloat(km)*parseTime(pace);
+      if(classify(m0,mode)==='trote') trote+=mins; else cam+=mins;
+      return ' ';
+    });
     // segmentos simples restantes
-    var r=sumDurations(t); cam+=r.cam; trote+=r.trote;
+    var r=sumDurations(t,mode); cam+=r.cam; trote+=r.trote;
     return {cam:Math.round(cam*10)/10, trote:Math.round(trote*10)/10};
   }
-  function vol(w){var r=parseWorkout(w.text);return {cam:r.cam,trote:r.trote,total:Math.round((r.cam+r.trote)*10)/10};}
+  function vol(w){var r=parseWorkout(w.text,state.defaultMode);return {cam:r.cam,trote:r.trote,total:Math.round((r.cam+r.trote)*10)/10};}
   function fmt(n){ return (Math.round(n*10)/10).toString().replace('.',','); }
 
   /* ---------------- Persistência (window.storage + memória) ---------------- */
@@ -415,10 +442,11 @@
   var chartMode='sem';
 
   function defaultTipos(){ return ['Contínuo','Intervalado','Fartlek','Misto']; }
-  function emptyStudentState(name){ return {aluna:name,workouts:[],weekMeta:{},tipos:defaultTipos(),seeded:false}; }
+  function emptyStudentState(name){ return {aluna:name,workouts:[],weekMeta:{},tipos:defaultTipos(),defaultMode:'cam',seeded:false}; }
   function normalizeState(s){
     if(!s.weekMeta) s.weekMeta={};
     if(!s.tipos||!s.tipos.length) s.tipos=defaultTipos();
+    if(s.defaultMode!=='trote') s.defaultMode='cam';
     if(!('seeded' in s)) s.seeded=true;
     return s;
   }
@@ -707,11 +735,14 @@
   }
 
   /* ---------------- Render tudo ---------------- */
-  function render(){ renderKPIs(); renderChart(); renderList(); }
+  function render(){
+    document.getElementById('modeSelect').value = state.defaultMode==='trote' ? 'trote' : 'cam';
+    renderKPIs(); renderChart(); renderList();
+  }
 
   /* ---------------- Prévia ao vivo ---------------- */
   function updatePreview(){
-    var v=parseWorkout(document.getElementById('fText').value);
+    var v=parseWorkout(document.getElementById('fText').value,state.defaultMode);
     var tot=Math.round((v.cam+v.trote)*10)/10;
     var pc=tot?Math.round(v.cam/tot*100):0;
     var p=document.getElementById('preview');
@@ -830,6 +861,10 @@
   document.getElementById('alunaRename').addEventListener('click',renameStudent);
   document.getElementById('alunaNew').addEventListener('click',newStudent);
   document.getElementById('alunaDel').addEventListener('click',deleteStudent);
+  document.getElementById('modeSelect').addEventListener('change',async function(){
+    state.defaultMode = this.value==='trote' ? 'trote' : 'cam';
+    await saveState(); updatePreview(); render();
+  });
   document.getElementById('bySem').addEventListener('click',function(){chartMode='sem';this.classList.add('on');document.getElementById('byMeso').classList.remove('on');document.getElementById('byTre').classList.remove('on');renderChart();});
   document.getElementById('byMeso').addEventListener('click',function(){chartMode='meso';this.classList.add('on');document.getElementById('bySem').classList.remove('on');document.getElementById('byTre').classList.remove('on');renderChart();});
   document.getElementById('byTre').addEventListener('click',function(){chartMode='tre';this.classList.add('on');document.getElementById('bySem').classList.remove('on');document.getElementById('byMeso').classList.remove('on');renderChart();});
