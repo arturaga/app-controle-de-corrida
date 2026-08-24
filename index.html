@@ -73,6 +73,7 @@
   .legend span{display:inline-flex;align-items:center;gap:6px;}
   .sw{width:12px;height:12px;border-radius:3px;display:inline-block;}
   .sw.cam{background:var(--cam);} .sw.trote{background:var(--trote);}
+  .sw.trend{width:14px;height:0;border-top:2px dashed var(--ink);border-radius:0;position:relative;top:-1px;}
   .chart-box{position:relative;width:100%;height:320px;}
   #chartFallback{display:none;font-size:13px;color:var(--muted);padding:20px 0;}
 
@@ -203,6 +204,7 @@
     <div class="legend">
       <span><i class="sw cam"></i>Caminhada</span>
       <span><i class="sw trote"></i>Trote / corrida</span>
+      <span><i class="sw trend"></i>Tendência</span>
     </div>
     <div class="chart-box"><canvas id="chart" width="882" height="320" style="display: block; box-sizing: border-box; height: 320px; width: 882px;"></canvas></div>
     <div id="chartFallback">O gráfico precisa de conexão para carregar. Os números continuam nas barras e cartões abaixo.</div>
@@ -569,7 +571,7 @@
         var c=0,t=0; m[wk].forEach(function(w){var v=vol(w);c+=v.cam;t+=v.trote;});
         labels.push('Sem '+wk); cam.push(Math.round(c*10)/10); trote.push(Math.round(t*10)/10);
       });
-      return {labels:labels,cam:cam,trote:trote};
+      return {labels:labels,cam:cam,trote:trote,total:cam.map(function(c,i){return Math.round((c+trote[i])*10)/10;})};
     } else if(chartMode==='meso'){
       var m2=byWeek(), weeks2=Object.keys(m2).map(Number).sort(function(a,b){return a-b;});
       var mesoGroups={};
@@ -581,12 +583,25 @@
         mesoGroups[mc].forEach(function(wk){ m2[wk].forEach(function(w){var v=vol(w);c+=v.cam;t+=v.trote;}); });
         labels2.push('Meso '+mc); cam2.push(Math.round(c*10)/10); trote2.push(Math.round(t*10)/10);
       });
-      return {labels:labels2,cam:cam2,trote:trote2};
+      return {labels:labels2,cam:cam2,trote:trote2,total:cam2.map(function(c,i){return Math.round((c+trote2[i])*10)/10;})};
     } else {
       var ord=ordered(),labels3=[],cam3=[],trote3=[];
       ord.forEach(function(w,i){var v=vol(w);labels3.push('T'+(i+1));cam3.push(v.cam);trote3.push(v.trote);});
-      return {labels:labels3,cam:cam3,trote:trote3};
+      return {labels:labels3,cam:cam3,trote:trote3,total:cam3.map(function(c,i){return Math.round((c+trote3[i])*10)/10;})};
     }
+  }
+  var shadowPlugin={id:'sp',beforeDatasetsDraw:function(c){
+    var ctx=c.ctx; ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.35)'; ctx.shadowBlur=10; ctx.shadowOffsetY=4;
+  },afterDatasetsDraw:function(c){ c.ctx.restore(); }};
+  function barGradient(topColor,bottomColor){
+    return function(context){
+      var chart=context.chart, area=chart.chartArea;
+      if(!area) return topColor;
+      var g=chart.ctx.createLinearGradient(0,area.top,0,area.bottom);
+      g.addColorStop(0,topColor); g.addColorStop(1,bottomColor);
+      return g;
+    };
   }
   var totalsPlugin={id:'tp',afterDatasetsDraw:function(c){
     var ctx=c.ctx;ctx.save();ctx.font='700 11px '+getComputedStyle(document.body).getPropertyValue('--disp-cond');
@@ -606,22 +621,26 @@
     if(typeof Chart==='undefined'){ fb.style.display='block'; cv.style.display='none'; return; }
     var d=chartData();
     var thick=d.labels.length>15?18:(d.labels.length>9?26:46);
-    var mk=function(label,data,color){return {label:label,data:data,backgroundColor:color,borderColor:'#090909',borderWidth:{top:2,right:0,bottom:0,left:0},borderSkipped:false,borderRadius:{topLeft:3,topRight:3,bottomLeft:0,bottomRight:0},maxBarThickness:thick,stack:'v'};};
+    var mk=function(label,data,topColor,bottomColor){return {label:label,data:data,backgroundColor:barGradient(topColor,bottomColor),borderColor:['rgba(255,255,255,.4)','#090909','#090909','#090909'],borderWidth:{top:2,right:0,bottom:0,left:0},borderSkipped:false,borderRadius:{topLeft:3,topRight:3,bottomLeft:0,bottomRight:0},maxBarThickness:thick,stack:'v',order:1};};
     var cfg={
       type:'bar',
-      data:{labels:d.labels,datasets:[mk('Caminhada',d.cam,'#EDEDED'),mk('Trote / corrida',d.trote,'#F97316')]},
+      data:{labels:d.labels,datasets:[
+        mk('Caminhada',d.cam,'#FFFFFF','#C7CBD1'),
+        mk('Trote / corrida',d.trote,'#FDA24D','#C2500A'),
+        {type:'line',label:'Tendência',data:d.total,borderColor:'#F5F5F5',backgroundColor:'#F5F5F5',pointBackgroundColor:'#F5F5F5',pointBorderColor:'#090909',tension:.35,pointRadius:4,pointHoverRadius:6,borderWidth:2,fill:false,order:0}
+      ]},
       options:{
         responsive:true,maintainAspectRatio:false,layout:{padding:{top:22}},
         plugins:{legend:{display:false},tooltip:{backgroundColor:'#1B1B1B',titleColor:'#F5F5F5',bodyColor:'#C9CDD4',borderColor:'rgba(249,115,22,.3)',borderWidth:1,callbacks:{
           label:function(x){return x.dataset.label+': '+fmt(x.parsed.y)+' min';},
-          footer:function(it){var s=0;it.forEach(function(i){s+=i.parsed.y;});return 'Total: '+fmt(Math.round(s*10)/10)+' min';}
+          footer:function(it){var s=0;it.forEach(function(i){if(i.dataset.type!=='line')s+=i.parsed.y;});return s?('Total: '+fmt(Math.round(s*10)/10)+' min'):'';}
         }}},
         scales:{
           x:{stacked:true,grid:{display:false},border:{color:'rgba(255,255,255,.14)'},ticks:{color:'#8A8F98',font:{size:11,family:'Barlow'}}},
           y:{stacked:true,beginAtZero:true,grid:{color:'rgba(255,255,255,.06)'},border:{display:false},ticks:{color:'#8A8F98',font:{size:11,family:'Barlow'},callback:function(v){return v+'m';}}}
         }
       },
-      plugins:[totalsPlugin]
+      plugins:[shadowPlugin,totalsPlugin]
     };
     if(chart){chart.data=cfg.data;chart.options=cfg.options;chart.update();}
     else{chart=new Chart(cv,cfg);}
