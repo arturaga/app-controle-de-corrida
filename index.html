@@ -139,6 +139,19 @@
   .wc-actions button:hover{background:var(--card-2);}
   .wc-actions .del.armed{background:var(--danger);border-color:var(--danger);color:#fff;}
 
+  /* Edição inline do treino */
+  .wcard.editing{grid-column:1 / -1;border-color:var(--line-2);box-shadow:0 0 0 3px var(--orange-glow);}
+  .wc-edit-head{font-family:var(--disp);font-size:16px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--orange);margin-bottom:11px;}
+  .wc-edit-grid{display:grid;grid-template-columns:90px 1fr;gap:10px;margin-bottom:10px;}
+  .wc-edit-f{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600;}
+  .wcard.editing .ie-type-other{grid-column:1 / -1;}
+  .wcard.editing input.ie-week,.wcard.editing select.ie-type,.wcard.editing input.ie-type-other,.wcard.editing textarea.ie-text{width:100%;border:1px solid var(--line-2);background:var(--card-2);border-radius:var(--r-sm);padding:8px 10px;font-family:var(--sans);font-size:14px;color:var(--ink);}
+  .wcard.editing textarea.ie-text{resize:vertical;min-height:120px;line-height:1.5;margin-bottom:10px;font-size:13px;}
+  .wcard.editing input:focus,.wcard.editing select:focus,.wcard.editing textarea:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-glow);}
+  .wc-edit-check{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:10px;cursor:pointer;user-select:none;}
+  .wc-edit-check input{width:17px;height:17px;accent-color:var(--ok);}
+  .wcard.editing .wc-actions button[data-act="save-edit"]{background:var(--orange);border-color:var(--orange);color:var(--bg);font-weight:700;}
+
   .empty{text-align:center;padding:34px 16px;color:var(--muted);}
   .empty h3{font-size:19px;color:var(--ink-2);margin-bottom:6px;text-transform:uppercase;}
 
@@ -442,6 +455,7 @@
   var roster={students:[],currentId:null};
   var TEXT_TEMPLATE='Aquecimento: \nPrincipal: \nVolta à Calma: ';
   var editingId=null;
+  var inlineEditId=null;
   var chart=null;
   var chartMode='sem';
 
@@ -703,7 +717,9 @@
           +'</div><div class="wgrid">';
       var wIdx=0;
       list.forEach(function(w){
-        wIdx++; var v=vol(w); var pc=v.total?Math.round(v.cam/v.total*100):0;
+        wIdx++;
+        if(w.id===inlineEditId){ html+=editCardHtml(w,wIdx); return; }
+        var v=vol(w); var pc=v.total?Math.round(v.cam/v.total*100):0;
         html+='<div class="wcard" data-id="'+w.id+'">'
           +'<div class="wcard-top"><div class="wc-title">Treino '+wIdx+(w.name?'<span class="wc-type">'+esc(w.name)+'</span>':'')+'</div>'
           +'<label class="wc-check'+(w.executed?' done':'')+'"><input type="checkbox" class="exec-check" data-id="'+w.id+'"'+(w.executed?' checked':'')+'><span>'+(w.executed?'Executado':'Marcar executado')+'</span></label></div>'
@@ -718,6 +734,35 @@
     host.innerHTML=html;
   }
   function esc(s){return (s+'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+  /* ---------------- Edição inline de treino ---------------- */
+  function editCardHtml(w,idx){
+    var isOther = !!w.name && state.tipos.indexOf(w.name)<0;
+    var typeOpts='<option value="">— nenhum —</option>'
+      + state.tipos.map(function(t){return '<option value="'+esc(t)+'"'+(t===w.name?' selected':'')+'>'+esc(t)+'</option>';}).join('')
+      + '<option value="__other__"'+(isOther?' selected':'')+'>Outro…</option>';
+    return '<div class="wcard editing" data-id="'+w.id+'">'
+      +'<div class="wc-edit-head">Editar Treino '+idx+'</div>'
+      +'<div class="wc-edit-grid">'
+        +'<label class="wc-edit-f"><span>Semana</span><input type="number" min="1" class="ie-week" value="'+w.week+'"></label>'
+        +'<label class="wc-edit-f"><span>Tipo</span><select class="ie-type">'+typeOpts+'</select></label>'
+        +'<input type="text" class="ie-type-other" placeholder="Nome do novo tipo" value="'+(isOther?esc(w.name):'')+'"'+(isOther?'':' style="display:none"')+'>'
+      +'</div>'
+      +'<textarea class="ie-text" rows="6">'+esc(w.text||'')+'</textarea>'
+      +'<label class="wc-edit-check"><input type="checkbox" class="ie-exec"'+(w.executed?' checked':'')+'><span>Já executado</span></label>'
+      +'<div class="wc-bar ie-bar"><div class="fc" style="width:0%"></div><div class="ft" style="width:0%"></div></div>'
+      +'<div class="wc-meta"><span class="ie-prev">—</span></div>'
+      +'<div class="wc-actions"><button data-act="save-edit">Salvar</button><button data-act="cancel-edit">Cancelar</button></div>'
+    +'</div>';
+  }
+  function updateInlinePreview(card){
+    if(!card) return;
+    var v=parseWorkout(card.querySelector('.ie-text').value,state.defaultMode);
+    var tot=Math.round((v.cam+v.trote)*10)/10, pc=tot?Math.round(v.cam/tot*100):0;
+    card.querySelector('.ie-bar .fc').style.width=pc+'%';
+    card.querySelector('.ie-bar .ft').style.width=(tot?100-pc:0)+'%';
+    card.querySelector('.ie-prev').innerHTML='<b>'+fmt(tot)+'</b> min total · caminhada '+fmt(v.cam)+' · trote '+fmt(v.trote)+' min';
+  }
 
   /* ---------------- Tipo (select com "Outro...") ---------------- */
   function normTipo(s){ return (s||'').trim(); }
@@ -786,18 +831,6 @@
     document.getElementById('cancelBtn').style.display='none';
     updatePreview();
   }
-  function loadIntoForm(w){
-    editingId=w.id;
-    document.getElementById('fWeek').value=w.week;
-    setSelectedTipo(w.name||'');
-    document.getElementById('fText').value=w.text||'';
-    document.getElementById('fExec').checked=!!w.executed;
-    document.getElementById('formTitle').textContent='Editar treino';
-    document.getElementById('saveBtn').textContent='Salvar treino';
-    document.getElementById('cancelBtn').style.display='';
-    updatePreview();
-    document.querySelector('.card-head').scrollIntoView({behavior:'smooth',block:'center'});
-  }
   async function submitForm(){
     await maybeOfferNewType();
     var week=parseInt(document.getElementById('fWeek').value,10)||1;
@@ -822,11 +855,32 @@
     var card=e.target.closest('.wcard'); if(!card) return;
     var id=card.getAttribute('data-id'); var act=btn.getAttribute('data-act');
     var w=state.workouts.filter(function(x){return x.id===id;})[0]; if(!w) return;
-    if(act==='edit'){ loadIntoForm(w); }
+    if(act==='edit'){
+      inlineEditId=id; disarm(); renderList();
+      var ecard=document.querySelector('.wcard.editing');
+      if(ecard){ updateInlinePreview(ecard); var t=ecard.querySelector('.ie-text'); if(t) t.focus({preventScroll:true}); }
+    }
+    else if(act==='cancel-edit'){ inlineEditId=null; renderList(); }
+    else if(act==='save-edit'){
+      var iw=parseInt(card.querySelector('.ie-week').value,10)||1;
+      var tsel=card.querySelector('.ie-type').value;
+      var inm= tsel==='__other__' ? (card.querySelector('.ie-type-other').value||'').trim() : tsel;
+      var itxt=card.querySelector('.ie-text').value;
+      if(!itxt.trim()){ card.querySelector('.ie-text').focus(); return; }
+      w.week=iw; w.name=inm; w.text=itxt; w.executed=card.querySelector('.ie-exec').checked;
+      if(inm && state.tipos.indexOf(inm)<0){ state.tipos.push(inm); rebuildTypeOptions(); }
+      inlineEditId=null;
+      await saveState(); render();
+    }
     else if(act==='del'){
       if(armed===id){ disarm(); state.workouts=state.workouts.filter(function(x){return x.id!==id;}); if(editingId===id)resetForm(); await saveState(); render(); }
       else{ disarm(); armed=id; btn.classList.add('armed'); btn.textContent='Confirmar?'; armedTimer=setTimeout(function(){var b=document.querySelector('.wcard[data-id="'+id+'"] .del');if(b){b.classList.remove('armed');b.textContent='Excluir';}armed=null;},3000); }
     }
+  });
+
+  document.getElementById('list').addEventListener('input',function(e){
+    if(!e.target.classList||!e.target.classList.contains('ie-text')) return;
+    updateInlinePreview(e.target.closest('.wcard'));
   });
 
   document.getElementById('list').addEventListener('change',async function(e){
@@ -835,6 +889,13 @@
       var id=chk.getAttribute('data-id');
       var w=state.workouts.filter(function(x){return x.id===id;})[0];
       if(w){ w.executed=chk.checked; await saveState(); render(); }
+      return;
+    }
+    var tsel=e.target.closest('.ie-type');
+    if(tsel){
+      var oth=tsel.closest('.wcard').querySelector('.ie-type-other');
+      if(tsel.value==='__other__'){ oth.style.display=''; oth.focus(); }
+      else { oth.style.display='none'; }
       return;
     }
     var sel=e.target.closest('select[data-week]'); if(!sel) return;
