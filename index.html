@@ -57,6 +57,19 @@
   .rc-foot{font-size:11.5px;color:var(--muted);font-weight:500;}
   .week-dup{border:1px solid var(--line-2);background:transparent;border-radius:20px;padding:3px 11px;font-size:12px;font-weight:700;color:var(--ink-2);white-space:nowrap;}
   .week-dup:hover{border-color:var(--orange);color:var(--orange);}
+  #loginGate{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;}
+  #loginGate[hidden]{display:none;}
+  #loginForm{width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px;padding:22px;}
+  #loginForm h2{font-size:26px;}
+  #loginForm .hint{margin-bottom:4px;}
+  #loginForm label{display:flex;flex-direction:column;gap:5px;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:600;}
+  #loginForm input{border:1px solid var(--line-2);background:var(--card-2);border-radius:var(--r-sm);padding:9px 11px;font-family:var(--sans);font-size:15px;color:var(--ink);}
+  #loginForm input:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-glow);}
+  .login-err{font-size:13px;color:var(--danger);font-weight:600;}
+  .login-err[hidden]{display:none;}
+  body.aluno .aluna, body.aluno #roster, body.aluno #chartCard,
+  body.aluno .form-card, body.aluno .foot-actions{display:none;}
+  body.aluno .kpis{grid-template-columns:repeat(2,1fr);}
   .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;}
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow);}
   .kpi .lab{font-size:11.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:600;}
@@ -191,6 +204,18 @@
 </style>
 </head>
 <body>
+
+<div id="loginGate" hidden>
+  <form id="loginForm" class="card">
+    <h2>Entrar</h2>
+    <div class="hint">Painel do treinador</div>
+    <label for="loginEmail">E-mail<input id="loginEmail" type="email" autocomplete="username" required></label>
+    <label for="loginPass">Senha<input id="loginPass" type="password" autocomplete="current-password" required></label>
+    <div id="loginErr" class="login-err" hidden>E-mail ou senha incorretos.</div>
+    <button id="loginBtn" class="btn btn-primary" type="submit">Entrar</button>
+  </form>
+</div>
+
 <div class="wrap">
 
   <header>
@@ -211,6 +236,7 @@
         <button id="alunaDel" type="button" title="Excluir aluna">Excluir</button>
       </div>
       <div class="aluna-row">
+        <button id="logoutBtn" type="button" title="Sair da conta">Sair</button>
         <select id="modeSelect" title="Padrão pra minutos ambíguos (sem 'trote'/'caminhada' no texto)">
           <option value="cam">Modo: Caminhada</option>
           <option value="trote">Modo: Corrida (ritmo/Km)</option>
@@ -223,7 +249,7 @@
 
   <section class="kpis" id="kpis" aria-label="Resumo"></section>
 
-  <section class="card">
+  <section class="card" id="chartCard">
     <div class="card-head">
       <div>
         <h2>Volume por bloco</h2>
@@ -298,7 +324,7 @@
   /* ---------------- Parser: texto do treino -> minutos ----------------
      "mode" é o padrão do aluno pra minutos ambíguos (sem palavra-chave
      trote/corrida/caminhada por perto): 'cam' (plano de caminhada/adaptação,
-     ex. aluna) ou 'trote' (plano de corrida por ritmo/Km, ex. aluna). */
+     plano de caminhada/adaptacao) ou 'trote' (plano de corrida por ritmo/Km). */
   function parseTime(s){
     if(s.indexOf(':')>-1){var p=s.split(':');return (parseInt(p[0],10)||0)+(parseInt(p[1],10)||0)/60;}
     return parseFloat(s)||0;
@@ -357,14 +383,92 @@
   function studentKey(id){ return 'mfit_volume_state_v1_'+id; }
   var SUPABASE_URL='https://kkuoeujnusevenojjgtw.supabase.co';
   var SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrdW9ldWpudXNldmVub2pqZ3R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1Mjg1MjEsImV4cCI6MjEwMzEwNDUyMX0.vFvaYb3wPhBhM_pdxMLD_NNUMC-LJn_k5v2ruavIrpQ';
+  /* ---------------- Modo aluno (link secreto) ----------------
+     Com ?aluno=<token> na URL o app vira uma visao somente-leitura do plano
+     daquele aluno. A unica escrita possivel e marcar/desmarcar um treino, e
+     quem garante isso e o banco (funcao aluno_marcar), nao esta interface. */
+  var ALUNO_TOKEN=(function(){
+    try{ return (new URLSearchParams(location.search)).get('aluno')||''; }catch(e){ return ''; }
+  })();
+  var isAluno=!!ALUNO_TOKEN;
+  async function rpc(fn,args){
+    var res=await fetch(SUPABASE_URL+'/rest/v1/rpc/'+fn,{
+      method:'POST',
+      headers:{apikey:SUPABASE_ANON_KEY, Authorization:'Bearer '+SUPABASE_ANON_KEY,
+               'Content-Type':'application/json'},
+      body:JSON.stringify(args||{})
+    });
+    if(!res.ok) throw new Error('rpc '+fn+': '+res.status);
+    return res.json();
+  }
+
   var storageOK=false;
   var storageMode='session'; // 'cloud' | 'claude' | 'browser' | 'session'
   var sessionMemMap={};
+  /* ---------------- Sessao do treinador ----------------
+     O modo aluno NAO usa isto: ele fala com as funcoes do banco pela chave
+     anonima, que e o unico acesso que sobra pro papel anon. */
+  var AUTH_KEY='mfit_auth_v1';
+  var session=null;
+  function loadSession(){
+    try{ var raw=localStorage.getItem(AUTH_KEY); session=raw?JSON.parse(raw):null; }
+    catch(e){ session=null; }
+  }
+  function saveSession(s){
+    session=s;
+    try{ if(s) localStorage.setItem(AUTH_KEY,JSON.stringify(s)); else localStorage.removeItem(AUTH_KEY); }catch(e){}
+  }
+  function authHeaders(){
+    var tok=(session&&session.access_token)?session.access_token:SUPABASE_ANON_KEY;
+    return {apikey:SUPABASE_ANON_KEY, Authorization:'Bearer '+tok};
+  }
+  async function signIn(email,pass){
+    try{
+      var res=await fetch(SUPABASE_URL+'/auth/v1/token?grant_type=password',{
+        method:'POST',
+        headers:{apikey:SUPABASE_ANON_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({email:email,password:pass})
+      });
+      if(!res.ok) return false;
+      var d=await res.json();
+      if(!d.access_token) return false;
+      saveSession({access_token:d.access_token, refresh_token:d.refresh_token});
+      return true;
+    }catch(e){ return false; }
+  }
+  async function refreshSession(){
+    if(!session||!session.refresh_token) return false;
+    try{
+      var res=await fetch(SUPABASE_URL+'/auth/v1/token?grant_type=refresh_token',{
+        method:'POST',
+        headers:{apikey:SUPABASE_ANON_KEY,'Content-Type':'application/json'},
+        body:JSON.stringify({refresh_token:session.refresh_token})
+      });
+      if(!res.ok){ saveSession(null); return false; }
+      var d=await res.json();
+      if(!d.access_token){ saveSession(null); return false; }
+      saveSession({access_token:d.access_token, refresh_token:d.refresh_token});
+      return true;
+    }catch(e){ return false; }
+  }
+  // Toda chamada do treinador passa por aqui: se o token expirou, renova e repete.
+  async function api(path,opts){
+    opts=opts||{};
+    var build=function(){
+      var h=authHeaders();
+      if(opts.headers) for(var k in opts.headers) h[k]=opts.headers[k];
+      return {method:opts.method||'GET', headers:h, body:opts.body};
+    };
+    var res=await fetch(SUPABASE_URL+path, build());
+    if(res.status===401 && session){
+      if(await refreshSession()) res=await fetch(SUPABASE_URL+path, build());
+    }
+    return res;
+  }
+
   async function loadKey(key){
     try{
-      var res=await fetch(SUPABASE_URL+'/rest/v1/app_state?key=eq.'+encodeURIComponent(key)+'&select=value',{
-        headers:{apikey:SUPABASE_ANON_KEY, Authorization:'Bearer '+SUPABASE_ANON_KEY}
-      });
+      var res=await api('/rest/v1/app_state?key=eq.'+encodeURIComponent(key)+'&select=value');
       if(res.ok){
         var rows=await res.json();
         if(rows&&rows.length){
@@ -392,13 +496,9 @@
     sessionMemMap[key]=json;
     try{ localStorage.setItem(key,json); }catch(e){}
     try{
-      var res=await fetch(SUPABASE_URL+'/rest/v1/app_state?on_conflict=key',{
+      var res=await api('/rest/v1/app_state?on_conflict=key',{
         method:'POST',
-        headers:{
-          apikey:SUPABASE_ANON_KEY, Authorization:'Bearer '+SUPABASE_ANON_KEY,
-          'Content-Type':'application/json',
-          Prefer:'resolution=merge-duplicates,return=minimal'
-        },
+        headers:{'Content-Type':'application/json', Prefer:'resolution=merge-duplicates,return=minimal'},
         body: JSON.stringify({key:key, value:value, updated_at:new Date().toISOString()})
       });
       if(res.ok){ storageOK=true; storageMode='cloud'; updateStoreNote(); return; }
@@ -422,9 +522,7 @@
     ids.forEach(function(id){ byKey[studentKey(id)]=id; });
     try{
       var keys=ids.map(function(id){ return encodeURIComponent(studentKey(id)); }).join(',');
-      var res=await fetch(SUPABASE_URL+'/rest/v1/app_state?select=key,value&key=in.('+keys+')',{
-        headers:{apikey:SUPABASE_ANON_KEY, Authorization:'Bearer '+SUPABASE_ANON_KEY}
-      });
+      var res=await api('/rest/v1/app_state?select=key,value&key=in.('+keys+')');
       if(res.ok){
         var rows=await res.json();
         if(rows&&rows.length){
@@ -443,7 +541,7 @@
     }
   }
 
-  /* ---------------- Dados de exemplo (plano da aluna) ---------------- */
+  /* ---------------- Plano de exemplo (adaptacao caminhada/corrida) ---------------- */
   function seedData(){
     var S=function(w,name,text,exec){return {id:'w'+(idc++),week:w,name:name,text:text,executed:exec};};
     var idc=1;
@@ -692,7 +790,19 @@
   }
 
   /* ---------------- Render KPIs ---------------- */
+  // Visao do aluno: so o que interessa pra ele -- volume da semana e progresso.
+  function renderKPIsAluno(){
+    var m=byWeek(), weeks=Object.keys(m).map(Number).sort(function(a,b){return a-b;});
+    var last=weeks.length?weeks[weeks.length-1]:null;
+    var volSem=last?weekTotal(m,last):0;
+    var n=state.workouts.length, done=0;
+    state.workouts.forEach(function(w){ if(w.executed) done++; });
+    document.getElementById('kpis').innerHTML=
+       kpi('', last?('Semana '+last):'Semana atual', fmt(Math.round(volSem))+'<small>min</small>', 'volume desta semana')
+      +kpi('', 'Seus treinos', done+' <small>/ '+n+'</small>', (n-done)+' pendentes');
+  }
   function renderKPIs(){
+    if(isAluno) return renderKPIsAluno();
     var cam=0,trote=0,done=0;
     state.workouts.forEach(function(w){var v=vol(w);cam+=v.cam;trote+=v.trote;if(w.executed)done++;});
     var total=cam+trote, n=state.workouts.length;
@@ -803,7 +913,9 @@
   function renderList(){
     var host=document.getElementById('list');
     if(!state.workouts.length){
-      host.innerHTML='<div class="card empty"><h3>Nenhum treino ainda</h3><div>Cole o primeiro treino no campo acima, ou clique em “Carregar plano de exemplo”.</div></div>';
+      host.innerHTML= isAluno
+        ? '<div class="card empty"><h3>Nenhum treino ainda</h3><div>Seu treinador ainda não cadastrou treinos aqui.</div></div>'
+        : '<div class="card empty"><h3>Nenhum treino ainda</h3><div>Cole o primeiro treino no campo acima, ou clique em “Carregar plano de exemplo”.</div></div>';
       return;
     }
     var m=byWeek(), weeks=Object.keys(m).map(Number).sort(function(a,b){return a-b;});
@@ -819,7 +931,7 @@
       var mc=mesocicloOf(wk);
       if(mc!==lastMeso){
         var rg=mesocicloRange(mc);
-        html+='<div class="cycle-div">Mesociclo '+mc+' · semanas '+rg[0]+'–'+rg[1]+'</div>';
+        if(!isAluno) html+='<div class="cycle-div">Mesociclo '+mc+' · semanas '+rg[0]+'–'+rg[1]+'</div>';
         lastMeso=mc;
       }
       var peak=mesoPeak[mc];
@@ -862,13 +974,13 @@
         acwrHtml='<span class="acwr-badge '+az.cls+'" title="Carga aguda:crônica — volume desta semana ÷ média das últimas '+ACWR_WINDOW+' semanas (incluindo ela). Faixa segura 0,80–1,30; acima de 1,50, risco alto.">ACWR '+fmt2(acwrVal)+' · '+az.label+'</span>';
       }
 
-      var dupHtml='<button type="button" class="week-dup" data-act="dup-week" data-week="'+wk+'" title="Copiar os treinos desta semana para a próxima semana livre, como não executados">Duplicar</button>';
+      var dupHtml=isAluno?'':'<button type="button" class="week-dup" data-act="dup-week" data-week="'+wk+'" title="Copiar os treinos desta semana para a próxima semana livre, como não executados">Duplicar</button>';
 
       html+='<div class="card weekgrp"><div class="week-head"><h3>Semana '+wk+'</h3>'
           +'<span class="week-total">'+fmt(tot)+'<small>min</small></span>'
-          +deltaHtml
+          +(isAluno?'':deltaHtml)
           +'<span class="week-split">caminhada '+fmt(Math.round(c*10)/10)+' · trote '+fmt(Math.round(t*10)/10)+' min · '+list.length+' treino'+(list.length>1?'s':'')+'</span>'
-          +selectHtml+badgeHtml+acwrHtml+dupHtml
+          +(isAluno?'':selectHtml+badgeHtml+acwrHtml)+dupHtml
           +'</div><div class="wgrid">';
       var wIdx=0;
       list.forEach(function(w){
@@ -881,7 +993,7 @@
           +'<div class="wc-text">'+esc(w.text||'')+'</div>'
           +'<div class="wc-bar"><div class="fc" style="width:'+pc+'%"></div><div class="ft" style="width:'+(100-pc)+'%"></div></div>'
           +'<div class="wc-meta"><span><b>'+fmt(v.total)+'</b> min total</span><span>caminhada '+fmt(v.cam)+' · trote '+fmt(v.trote)+' min</span></div>'
-          +'<div class="wc-actions"><button data-act="edit">Editar</button><button class="del" data-act="del">Excluir</button></div>'
+          +(isAluno?'':'<div class="wc-actions"><button data-act="edit">Editar</button><button class="del" data-act="del">Excluir</button></div>')
           +'</div>';
       });
       html+='</div></div>';
@@ -957,6 +1069,7 @@
 
   /* ---------------- Render tudo ---------------- */
   function render(){
+    if(isAluno){ renderKPIs(); renderList(); return; }
     document.getElementById('modeSelect').value = state.defaultMode==='trote' ? 'trote' : 'cam';
     rosterStates[roster.currentId]=state;
     renderKPIs(); renderChart(); renderList(); renderRoster();
@@ -1059,6 +1172,20 @@
     if(chk){
       var id=chk.getAttribute('data-id');
       var w=state.workouts.filter(function(x){return x.id===id;})[0];
+      if(isAluno){
+        var want=chk.checked;
+        chk.disabled=true;
+        try{
+          var ok=await rpc('aluno_marcar',{p_token:ALUNO_TOKEN,p_workout_id:id,p_feito:want});
+          if(ok!==true) throw new Error('recusado');
+          if(w) w.executed=want;
+          render();
+        }catch(err){
+          chk.checked=!want; chk.disabled=false;
+          window.alert('Não consegui salvar agora. Verifique a conexão e tente de novo.');
+        }
+        return;
+      }
       if(w){ w.executed=chk.checked; await saveState(); render(); }
       return;
     }
@@ -1127,7 +1254,27 @@
   document.getElementById('byTre').addEventListener('click',function(){chartMode='tre';this.classList.add('on');document.getElementById('bySem').classList.remove('on');document.getElementById('byMeso').classList.remove('on');renderChart();});
 
   /* ---------------- Init ---------------- */
-  (async function init(){
+  async function initAluno(){
+    document.body.classList.add('aluno');
+    var host=document.getElementById('list');
+    var plano=null;
+    try{ plano=await rpc('aluno_plano',{p_token:ALUNO_TOKEN}); }catch(e){}
+    if(!plano){
+      document.getElementById('kpis').innerHTML='';
+      host.innerHTML='<div class="card empty"><h3>Link inválido</h3>'
+        +'<div>Este link não é válido ou foi substituído. Peça um novo ao seu treinador.</div></div>';
+      return;
+    }
+    state=normalizeState({aluna:plano.aluna||'', defaultMode:plano.defaultMode||'cam',
+                          workouts:plano.workouts||[], weekMeta:{}, tipos:[]});
+    var sub=document.querySelector('.brand .sub');
+    if(sub) sub.textContent=(plano.aluna?plano.aluna+' · ':'')+'seus treinos';
+    var note=document.getElementById('storeNote');
+    if(note) note.textContent='Marque os treinos conforme for fazendo — seu treinador vê na hora.';
+    render();
+  }
+
+  async function bootTreinador(){
     await initRoster();
     var loaded=await loadState();
     if(loaded&&loaded.workouts){ state=normalizeState(loaded); }
@@ -1137,6 +1284,33 @@
     await loadAllStudents();
     rosterStates[roster.currentId]=state; // o estado vivo manda sobre a copia da nuvem
     renderRoster();
+  }
+
+  document.getElementById('loginForm').addEventListener('submit',async function(ev){
+    ev.preventDefault();
+    var btn=document.getElementById('loginBtn'), err=document.getElementById('loginErr');
+    var pass=document.getElementById('loginPass');
+    err.hidden=true; btn.disabled=true; btn.textContent='Entrando…';
+    var ok=await signIn(document.getElementById('loginEmail').value.trim(), pass.value);
+    btn.disabled=false; btn.textContent='Entrar';
+    if(!ok){ err.hidden=false; pass.select(); return; }
+    pass.value='';
+    document.getElementById('loginGate').hidden=true;
+    await bootTreinador();
+  });
+  document.getElementById('logoutBtn').addEventListener('click',function(){
+    saveSession(null); location.reload();
+  });
+
+  (async function init(){
+    if(isAluno){ await initAluno(); return; }
+    loadSession();
+    if(!session){
+      document.getElementById('loginGate').hidden=false;
+      document.getElementById('loginEmail').focus();
+      return;
+    }
+    await bootTreinador();
   })();
 })();
 </script>
