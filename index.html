@@ -82,7 +82,13 @@
   /* Card */
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:20px;margin-bottom:20px;}
   .form-card{position:sticky;top:16px;z-index:50;max-height:calc(100vh - 32px);overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.45),0 0 0 1px var(--line-2);padding:15px 18px;}
-  .form-card .card-head{margin-bottom:11px;}
+  .form-card .card-head{margin-bottom:11px;cursor:pointer;user-select:none;}
+  .form-card.collapsed{padding:10px 18px;}
+  .form-card.collapsed .card-head{margin-bottom:0;}
+  .form-card.collapsed .card-head .hint{display:none;}
+  .form-card.collapsed > *:not(.card-head){display:none;}
+  .form-toggle{border:1px solid var(--line-2);background:transparent;color:var(--ink-2);border-radius:var(--r-sm);width:30px;height:30px;font-size:17px;font-weight:700;line-height:1;flex-shrink:0;}
+  .form-toggle:hover{border-color:var(--orange);color:var(--orange);}
   .form-card .card-head h2{font-size:18px;}
   .form-card .form-grid{margin-bottom:9px;}
   .form-card .field textarea{min-height:74px;}
@@ -277,12 +283,13 @@
     <div id="chartFallback">O gráfico precisa de conexão para carregar. Os números continuam nas barras e cartões abaixo.</div>
   </section>
 
-  <section class="card form-card">
-    <div class="card-head">
+  <section class="card form-card collapsed">
+    <div class="card-head" id="formHead">
       <div>
         <h2 id="formTitle">Adicionar treino</h2>
         <div class="hint">Escreva como no MFIT — o cálculo é automático</div>
       </div>
+      <button type="button" id="formToggle" class="form-toggle" aria-expanded="false" title="Abrir/fechar">+</button>
     </div>
     <div class="form-grid">
       <div class="field">
@@ -1107,6 +1114,16 @@
     document.getElementById('cancelBtn').style.display='none';
     updatePreview();
   }
+  function formCollapsed(){ return document.querySelector('.form-card').classList.contains('collapsed'); }
+  function setFormCollapsed(v){
+    document.querySelector('.form-card').classList.toggle('collapsed', v);
+    var t=document.getElementById('formToggle');
+    t.textContent = v ? '+' : '−';
+    t.setAttribute('aria-expanded', v?'false':'true');
+    if(!v) document.getElementById('fText').focus();
+  }
+  document.getElementById('formHead').addEventListener('click',function(){ setFormCollapsed(!formCollapsed()); });
+
   async function submitForm(){
     await maybeOfferNewType();
     var week=parseInt(document.getElementById('fWeek').value,10)||1;
@@ -1121,6 +1138,7 @@
       state.workouts.push({id:'w'+Date.now()+Math.floor(Math.random()*999),week:week,name:name,text:text,executed:exec});
     }
     await saveState(); resetForm(); render();
+    setFormCollapsed(true);
   }
 
   /* ---------------- Ações da lista ---------------- */
