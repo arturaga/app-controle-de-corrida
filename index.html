@@ -245,6 +245,7 @@
       <div class="aluna-row">
         <select id="alunaSelect"></select>
         <button id="alunaRename" type="button" title="Renomear aluna">Renomear</button>
+        <button id="alunaLink" type="button" title="Gerar o link de acompanhamento desta aluna">Link</button>
         <button id="alunaNew" type="button" title="Nova aluna">+ Nova</button>
         <button id="alunaDel" type="button" title="Excluir aluna">Excluir</button>
       </div>
@@ -727,6 +728,30 @@
     await saveKey(ROSTER_KEY,roster);
     rebuildAlunaOptions();
   }
+  // Gera (ou recupera) o link secreto da aluna atual. A funcao no banco so
+  // responde pro treinador autenticado.
+  async function linkDoAluno(){
+    var btn=document.getElementById('alunaLink'), rotulo=btn.textContent;
+    btn.disabled=true; btn.textContent='...';
+    try{
+      var res=await api('/rest/v1/rpc/aluno_link',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({p_student_key:studentKey(roster.currentId)})
+      });
+      if(!res.ok) throw new Error(res.status);
+      var token=await res.json();
+      var url=location.origin+location.pathname+'?aluno='+token;
+      var copiado=false;
+      try{ await navigator.clipboard.writeText(url); copiado=true; }catch(e){}
+      window.prompt(copiado ? 'Link copiado. Mande este endereco para a aluna:'
+                            : 'Copie este link e mande para a aluna:', url);
+    }catch(e){
+      window.alert('Nao consegui gerar o link. Confira se voce ainda esta logado.');
+    }
+    btn.disabled=false; btn.textContent=rotulo;
+  }
+
   var alunaDelArmed=false, alunaDelTimer=null;
   async function deleteStudent(){
     var btn=document.getElementById('alunaDel');
@@ -1268,6 +1293,7 @@
   });
   document.getElementById('alunaSelect').addEventListener('change',function(){ switchStudent(this.value); });
   document.getElementById('alunaRename').addEventListener('click',renameStudent);
+  document.getElementById('alunaLink').addEventListener('click',linkDoAluno);
   document.getElementById('alunaNew').addEventListener('click',newStudent);
   document.getElementById('alunaDel').addEventListener('click',deleteStudent);
   document.getElementById('modeSelect').addEventListener('change',async function(){
