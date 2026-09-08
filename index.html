@@ -15,7 +15,7 @@
     --bg:#090909; --card:#141414; --card-2:#1B1B1B; --line:rgba(249,115,22,.16); --line-2:rgba(249,115,22,.28);
     --cam:#EDEDED; --cam-bg:rgba(255,255,255,.08); --trote:#F97316; --trote-bg:rgba(249,115,22,.14);
     --orange:#F97316; --orange-dark:#C2500A; --orange-glow:rgba(249,115,22,.35);
-    --ok:#22C55E; --ok-bg:rgba(34,197,94,.12); --warn:#FBBF24; --warn-bg:rgba(251,191,36,.12); --danger:#EF4444;
+    --ok:#22C55E; --ok-bg:rgba(34,197,94,.12); --warn:#FBBF24; --warn-bg:rgba(251,191,36,.12); --danger:#EF4444; --danger-bg:rgba(239,68,68,.12);
     --r:14px; --r-sm:9px; --r-xs:6px;
     --disp:'Bebas Neue', 'Arial Narrow', system-ui, sans-serif;
     --disp-cond:'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
@@ -48,7 +48,7 @@
   .aluna-row button.armed{background:var(--danger);border-color:var(--danger);color:#fff;}
 
   /* KPIs */
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;}
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow);}
   .kpi .lab{font-size:11.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:600;}
   .kpi .num{font-family:var(--disp);font-size:38px;font-weight:600;line-height:1;margin-top:6px;font-variant-numeric:tabular-nums;}
@@ -116,11 +116,19 @@
   .week-split{font-size:12.5px;color:var(--muted);font-weight:500;}
   .week-delta{font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums;}
   .week-delta.up{color:var(--trote);} .week-delta.down{color:var(--cam);} .week-delta.flat{color:var(--muted);}
+  .week-delta.spike{color:var(--danger);cursor:help;}
   .micro-label{display:inline-flex;align-items:center;gap:7px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600;margin-left:auto;cursor:help;}
   .micro-select{border:1px solid var(--line-2);background:var(--card);border-radius:20px;padding:4px 10px;font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--ink-2);text-transform:none;letter-spacing:0;}
   .micro-select:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-glow);}
   .coher-badge{font-size:12px;font-weight:700;padding:3px 11px;border-radius:20px;white-space:nowrap;}
   .coher-badge.ok{background:var(--ok-bg);color:var(--ok);} .coher-badge.warn{background:var(--warn-bg);color:var(--warn);}
+  .acwr-badge{font-size:12px;font-weight:700;padding:3px 11px;border-radius:20px;white-space:nowrap;cursor:help;}
+  .acwr-badge.ok{background:var(--ok-bg);color:var(--ok);} .acwr-badge.warn{background:var(--warn-bg);color:var(--warn);}
+  .acwr-badge.risk{background:var(--danger-bg);color:var(--danger);} .acwr-badge.low{background:var(--cam-bg);color:var(--cam);}
+  .acwr-badge.na{background:rgba(255,255,255,.05);color:var(--muted);}
+  .kpi.acwr .num{font-size:34px;}
+  .kpi.acwr.ok .num{color:var(--ok);} .kpi.acwr.warn .num{color:var(--warn);}
+  .kpi.acwr.risk .num{color:var(--danger);} .kpi.acwr.low .num{color:var(--cam);}
   .wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
   .wcard{border:1px solid var(--line);border-radius:var(--r);background:var(--card);padding:14px 16px;display:flex;flex-direction:column;}
   .wcard-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px;flex-wrap:wrap;}
@@ -163,6 +171,7 @@
 
   @media (max-width:640px){
     .kpis{grid-template-columns:repeat(2,1fr);}
+    .kpi.acwr{grid-column:1 / -1;}
     .form-grid{grid-template-columns:1fr 1fr;}
     .form-grid .f-tipo{grid-column:1 / -1;}
     header{flex-direction:column;align-items:stretch;}
@@ -328,6 +337,7 @@
   }
   function vol(w){var r=parseWorkout(w.text,state.defaultMode);return {cam:r.cam,trote:r.trote,total:Math.round((r.cam+r.trote)*10)/10};}
   function fmt(n){ return (Math.round(n*10)/10).toString().replace('.',','); }
+  function fmt2(n){ return (Math.round(n*100)/100).toFixed(2).replace('.',','); }
 
   /* ---------------- Persistência (window.storage + memória) ---------------- */
   var LEGACY_KEY='mfit_volume_state_v1';
@@ -450,6 +460,40 @@
   function mesocicloOf(wk){ return Math.ceil(wk/4); }
   function mesocicloRange(mc){ return [(mc-1)*4+1, mc*4]; }
 
+  /* ---------------- Carga aguda:cronica (ACWR) ----------------
+     Convencao acoplada (Gabbett), em resolucao semanal: a carga aguda e o
+     volume da propria semana; a cronica e a media das ultimas 4 semanas,
+     incluindo ela. Semana sem treino conta como 0 (queda real de carga).
+     So faz sentido a partir da 4a semana do plano -- antes disso, null. */
+  var ACWR_WINDOW=4;
+  var SPIKE_PCT=10;
+  var ACWR_ZONES={
+    low: {cls:'low',  label:'carga baixa'},
+    ok:  {cls:'ok',   label:'faixa ideal'},
+    warn:{cls:'warn', label:'atenção'},
+    risk:{cls:'risk', label:'risco alto'}
+  };
+  function acwrZone(v){
+    if(v<0.80) return ACWR_ZONES.low;
+    if(v<=1.30) return ACWR_ZONES.ok;
+    if(v<=1.50) return ACWR_ZONES.warn;
+    return ACWR_ZONES.risk;
+  }
+  function weekVolumeOrZero(m,wk){ return m[wk] ? weekTotal(m,wk) : 0; }
+  function acwrFor(m,wk,firstWeek){
+    if(wk-(ACWR_WINDOW-1) < firstWeek) return null;
+    var sum=0;
+    for(var i=0;i<ACWR_WINDOW;i++) sum+=weekVolumeOrZero(m,wk-i);
+    var cronica=sum/ACWR_WINDOW;
+    if(!cronica) return null;
+    return weekVolumeOrZero(m,wk)/cronica;
+  }
+  function latestAcwr(){
+    var m=byWeek(), weeks=Object.keys(m).map(Number).sort(function(a,b){return a-b;});
+    if(!weeks.length) return null;
+    return acwrFor(m,weeks[weeks.length-1],weeks[0]);
+  }
+
   /* ---------------- Estado ---------------- */
   var state={aluna:'',workouts:[],weekMeta:{},tipos:['Contínuo','Intervalado','Fartlek','Misto'],seeded:false};
   var roster={students:[],currentId:null};
@@ -570,7 +614,14 @@
       kpi('', 'Volume total', fmt(Math.round(total))+'<small>min</small>', (total?('≈ '+fmt(Math.round(hrs*10)/10)+' h'):'—')+' · '+n+' treinos')
      +kpi('cam','Caminhada', fmt(Math.round(cam))+'<small>min</small>', pc+'% do volume')
      +kpi('trote','Trote / corrida', fmt(Math.round(trote))+'<small>min</small>', pt+'% do volume')
-     +kpi('', 'Executados', done+' <small>/ '+n+'</small>', (n-done)+' pendentes');
+     +kpi('', 'Executados', done+' <small>/ '+n+'</small>', (n-done)+' pendentes')
+     +acwrKpi();
+  }
+  function acwrKpi(){
+    var a=latestAcwr(), z=(a===null?null:acwrZone(a));
+    var num=(a===null?'—':fmt2(a));
+    var foot=(a===null?'precisa de 4 semanas':(z.label+' · seguro 0,80–1,30'));
+    return kpi('acwr'+(z?' '+z.cls:''), 'Carga aguda:crônica', num, foot);
   }
   function kpi(cls,lab,num,foot){
     return '<div class="kpi '+cls+'"><div class="lab">'+lab+'</div><div class="num">'+num+'</div><div class="foot">'+foot+'</div></div>';
@@ -692,7 +743,12 @@
       if(prevTotal!==null && prevTotal>0){
         var pct=Math.round((tot-prevTotal)/prevTotal*100);
         var cls=pct>0?'up':(pct<0?'down':'flat'), arrow=pct>0?'▲':(pct<0?'▼':'→');
-        deltaHtml='<span class="week-delta '+cls+'">'+arrow+' '+(pct>0?'+':'')+pct+'% vs sem. anterior</span>';
+        // Progressao classica de corrida: subir no maximo ~10% de volume por semana.
+        var spike=pct>SPIKE_PCT;
+        if(spike) cls+=' spike';
+        deltaHtml='<span class="week-delta '+cls+'"'
+          +(spike?' title="Salto de carga: aumento acima de '+SPIKE_PCT+'% em relacao a semana anterior."':'')
+          +'>'+(spike?'⚠ ':'')+arrow+' '+(pct>0?'+':'')+pct+'% vs sem. anterior</span>';
       }
       prevTotal=tot;
 
@@ -709,11 +765,20 @@
         badgeHtml='<span class="coher-badge '+(inRange?'ok':'warn')+'">'+(inRange?'✓':'⚠')+' '+pctPeak+'% do pico · esperado '+mt.range[0]+'–'+mt.range[1]+'%</span>';
       }
 
+      var acwrVal=acwrFor(m,wk,weeks[0]);
+      var acwrHtml;
+      if(acwrVal===null){
+        acwrHtml='<span class="acwr-badge na" title="Carga aguda:crônica — precisa de '+ACWR_WINDOW+' semanas de histórico para o cálculo fazer sentido.">ACWR —</span>';
+      } else {
+        var az=acwrZone(acwrVal);
+        acwrHtml='<span class="acwr-badge '+az.cls+'" title="Carga aguda:crônica — volume desta semana ÷ média das últimas '+ACWR_WINDOW+' semanas (incluindo ela). Faixa segura 0,80–1,30; acima de 1,50, risco alto.">ACWR '+fmt2(acwrVal)+' · '+az.label+'</span>';
+      }
+
       html+='<div class="card weekgrp"><div class="week-head"><h3>Semana '+wk+'</h3>'
           +'<span class="week-total">'+fmt(tot)+'<small>min</small></span>'
           +deltaHtml
           +'<span class="week-split">caminhada '+fmt(Math.round(c*10)/10)+' · trote '+fmt(Math.round(t*10)/10)+' min · '+list.length+' treino'+(list.length>1?'s':'')+'</span>'
-          +selectHtml+badgeHtml
+          +selectHtml+badgeHtml+acwrHtml
           +'</div><div class="wgrid">';
       var wIdx=0;
       list.forEach(function(w){
