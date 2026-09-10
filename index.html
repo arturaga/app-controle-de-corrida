@@ -169,7 +169,30 @@
   .kpi.acwr .num{font-size:34px;}
   .kpi.acwr.ok .num{color:var(--ok);} .kpi.acwr.warn .num{color:var(--warn);}
   .kpi.acwr.risk .num{color:var(--danger);} .kpi.acwr.low .num{color:var(--cam);}
-  .wc-data{font-size:12px;font-weight:700;color:var(--orange);text-transform:capitalize;margin-bottom:5px;}
+  body.aluno .kpis{display:block;}
+  .hero{display:flex;align-items:center;gap:18px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--shadow);margin-bottom:12px;}
+  .hero-anel{position:relative;width:104px;height:104px;flex-shrink:0;}
+  .anel{width:104px;height:104px;transform:rotate(-90deg);}
+  .anel-fundo{fill:none;stroke:rgba(255,255,255,.10);stroke-width:10;}
+  .anel-frente{fill:none;stroke:var(--orange);stroke-width:10;stroke-linecap:round;transition:stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1);}
+  .anel-txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;}
+  .anel-txt b{font-family:var(--disp);font-size:34px;font-weight:600;}
+  .anel-txt span{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:2px;}
+  .hero-txt{min-width:0;}
+  .hero-sem{font-family:var(--disp);font-size:26px;text-transform:uppercase;letter-spacing:.5px;line-height:1;}
+  .hero-recado{font-size:14px;color:var(--ink-2);font-weight:600;margin-top:4px;}
+  .hero-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;}
+  .chip{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px;background:var(--card-2);color:var(--ink-2);border:1px solid var(--line);white-space:nowrap;}
+  .chip.fogo{background:var(--trote-bg);color:var(--orange);border-color:var(--line-2);}
+  .medalhas{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
+  .medalha{display:flex;flex-direction:column;align-items:center;gap:3px;width:74px;padding:9px 4px;border-radius:var(--r-sm);background:var(--card);border:1px solid var(--line);opacity:.38;filter:grayscale(1);}
+  .medalha.ok{opacity:1;filter:none;border-color:var(--line-2);}
+  .medalha i{font-size:21px;font-style:normal;line-height:1;}
+  .medalha em{font-size:9.5px;font-style:normal;font-weight:700;color:var(--muted);text-align:center;line-height:1.15;text-transform:uppercase;}
+  .medalha.ok em{color:var(--ink-2);}
+  .wcard.proximo{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-glow);}
+  .wc-proximo{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--orange);margin-bottom:6px;}
+  .wc-data{font-size:12px;font-weight:700;color:var(--orange);margin-bottom:5px;}
   .weekgrp.atual{border-color:var(--orange);box-shadow:0 0 0 1px var(--line-2), var(--shadow);}
   .week-agora{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;background:var(--trote-bg);color:var(--orange);padding:3px 9px;border-radius:20px;white-space:nowrap;}
   .wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
@@ -215,6 +238,11 @@
 
   @media (max-width:640px){
     .roster{grid-template-columns:1fr;}
+    .hero{gap:13px;padding:14px;}
+    .hero-anel,.anel{width:86px;height:86px;}
+    .anel-txt b{font-size:28px;}
+    .hero-sem{font-size:22px;}
+    .medalha{width:calc(33.333% - 6px);}
     .kpis{grid-template-columns:repeat(2,1fr);}
     .kpi.acwr{grid-column:1 / -1;}
     .form-grid{grid-template-columns:1fr 1fr;}
@@ -883,15 +911,103 @@
 
   /* ---------------- Render KPIs ---------------- */
   // Visao do aluno: so o que interessa pra ele -- volume da semana e progresso.
-  function renderKPIsAluno(){
+  /* ---------------- Gamificacao (tela da aluna) ----------------
+     Tudo derivado dos treinos: nada e gravado. O preco disso e que uma
+     medalha pode sumir se o plano for editado -- aceito de proposito, pra
+     nao precisar de escrita nova no banco. */
+  function semanaFoco(){
+    var sa=semanaAtual();
+    if(sa!==null) return sa;
     var m=byWeek(), weeks=Object.keys(m).map(Number).sort(function(a,b){return a-b;});
-    var last=weeks.length?weeks[weeks.length-1]:null;
-    var volSem=last?weekTotal(m,last):0;
-    var n=state.workouts.length, done=0;
-    state.workouts.forEach(function(w){ if(w.executed) done++; });
+    if(!weeks.length) return null;
+    for(var i=0;i<weeks.length;i++){
+      var pendente=m[weeks[i]].filter(function(w){return !w.executed;}).length;
+      if(pendente) return weeks[i];
+    }
+    return weeks[weeks.length-1];
+  }
+  function semanaCompleta(m,wk){
+    var l=m[wk]||[];
+    if(!l.length) return false;
+    return l.filter(function(w){return w.executed;}).length === l.length;
+  }
+  function sequenciaSemanas(){
+    var m=byWeek(), weeks=Object.keys(m).map(Number).sort(function(a,b){return a-b;});
+    var i=weeks.length-1;
+    while(i>=0 && !semanaCompleta(m,weeks[i])) i--;   // a semana em curso nao quebra nada
+    var seq=0;
+    while(i>=0 && semanaCompleta(m,weeks[i])){ seq++; i--; }
+    return seq;
+  }
+  function acumulado(){
+    var min=0, trote=0, n=0;
+    state.workouts.forEach(function(w){
+      if(!w.executed) return;
+      var v=vol(w); min+=v.total; trote+=v.trote; n++;
+    });
+    return {min:Math.round(min), trote:Math.round(trote), treinos:n};
+  }
+  function conquistas(){
+    var a=acumulado(), m=byWeek();
+    var completas=Object.keys(m).map(Number).filter(function(wk){return semanaCompleta(m,wk);}).length;
+    var temTrote=state.workouts.filter(function(w){return w.executed && vol(w).trote>0;}).length>0;
+    var seq=sequenciaSemanas();
+    return [
+      {i:'👟', n:'Primeiro treino',     ok:a.treinos>=1},
+      {i:'🏃', n:'Primeiro trote',      ok:temTrote},
+      {i:'✅', n:'Semana completa',     ok:completas>=1},
+      {i:'🔟', n:'10 treinos',          ok:a.treinos>=10},
+      {i:'⚡', n:'100 min de trote',    ok:a.trote>=100},
+      {i:'⏱', n:'10 horas somadas',    ok:a.min>=600},
+      {i:'🔥', n:'4 semanas seguidas',  ok:seq>=4},
+      {i:'🏅', n:'25 treinos',          ok:a.treinos>=25},
+      {i:'🎖', n:'50 treinos',          ok:a.treinos>=50}
+    ];
+  }
+  function horasMin(min){
+    var h=Math.floor(min/60), r=min%60;
+    return h? (h+'h'+(r?(' '+r+'min'):'')) : (r+'min');
+  }
+  function anelSvg(feitos,total){
+    var pct = total? feitos/total : 0, C=326.7;
+    return '<svg class="anel" viewBox="0 0 120 120" aria-hidden="true">'
+      +'<circle class="anel-fundo" cx="60" cy="60" r="52"/>'
+      +'<circle class="anel-frente" cx="60" cy="60" r="52" stroke-dasharray="'+C+'" stroke-dashoffset="'+(C*(1-pct))+'"/>'
+      +'</svg>';
+  }
+
+  function renderKPIsAluno(){
+    var m=byWeek(), wk=semanaFoco();
+    var lista=(wk!==null?(m[wk]||[]):[]);
+    var feitos=lista.filter(function(w){return w.executed;}).length;
+    var total=lista.length;
+    var a=acumulado(), seq=sequenciaSemanas();
+    var falta=total-feitos;
+    var recado = !total ? 'Nenhum treino nesta semana'
+               : falta===0 ? 'Semana completa. Muito bem!'
+               : (falta===1 ? 'Falta 1 treino' : 'Faltam '+falta+' treinos');
+
     document.getElementById('kpis').innerHTML=
-       kpi('', last?('Semana '+last):'Semana atual', fmt(Math.round(volSem))+'<small>min</small>', 'volume desta semana')
-      +kpi('', 'Seus treinos', done+' <small>/ '+n+'</small>', (n-done)+' pendentes');
+      '<div class="hero">'
+      + '<div class="hero-anel">'+anelSvg(feitos,total)
+      +   '<div class="anel-txt"><b>'+feitos+'</b><span>de '+total+'</span></div>'
+      + '</div>'
+      + '<div class="hero-txt">'
+      +   '<div class="hero-sem">'+(wk!==null?('Semana '+wk):'Seu plano')+'</div>'
+      +   '<div class="hero-recado">'+recado+'</div>'
+      +   '<div class="hero-chips">'
+      +     (seq>0?'<span class="chip fogo">🔥 '+seq+(seq>1?' semanas seguidas':' semana seguida')+'</span>':'')
+      +     '<span class="chip">'+horasMin(a.min)+' somados</span>'
+      +     (a.trote>0?'<span class="chip">'+horasMin(a.trote)+' de trote</span>':'')
+      +   '</div>'
+      + '</div>'
+      +'</div>'
+      +'<div class="medalhas">'
+      + conquistas().map(function(c){
+          return '<span class="medalha'+(c.ok?' ok':'')+'" title="'+esc(c.n)+'">'
+            +'<i>'+c.i+'</i><em>'+esc(c.n)+'</em></span>';
+        }).join('')
+      +'</div>';
   }
   function renderKPIs(){
     if(isAluno) return renderKPIsAluno();
@@ -1039,6 +1155,13 @@
       return;
     }
     var m=byWeek(), weeks=Object.keys(m).map(Number).sort(function(a,b){return a-b;});
+    var focoWk=null;
+    if(isAluno){
+      focoWk=semanaFoco();
+      if(focoWk!==null && weeks.indexOf(focoWk)>-1){
+        weeks=[focoWk].concat(weeks.filter(function(w){return w!==focoWk;}));
+      }
+    }
 
     // Agrupa em mesociclos de 4 semanas e calcula o pico (choque) de cada bloco.
     var mesoGroups={};
@@ -1047,6 +1170,12 @@
     Object.keys(mesoGroups).forEach(function(mc){ mesoPeak[mc]=calcPeak(m,mesoGroups[mc]); });
 
     var prevTotal=null, html='', lastMeso=null, semAtual=semanaAtual();
+    var idxSemana=0;
+    var proximoId=null;
+    if(isAluno){
+      var foco=semanaFoco(), pend=(foco!==null?(m[foco]||[]):[]).filter(function(w){return !w.executed;});
+      if(pend.length) proximoId=pend[0].id;
+    }
     weeks.forEach(function(wk){
       var mc=mesocicloOf(wk);
       if(mc!==lastMeso){
@@ -1097,6 +1226,8 @@
       var dupHtml=isAluno?'':'<button type="button" class="week-dup" data-act="dup-week" data-week="'+wk+'" title="Copiar os treinos desta semana para a próxima semana livre, como não executados">Duplicar</button>';
 
       var ehAtual = (wk===semAtual);
+      if(isAluno && focoWk!==null && idxSemana===1) html+='<div class="cycle-div">Semanas anteriores</div>';
+      idxSemana++;
       html+='<div class="card weekgrp'+(ehAtual?' atual':'')+'" data-week="'+wk+'"><div class="week-head"><h3>Semana '+wk+'</h3>'
           +(ehAtual?'<span class="week-agora">esta semana</span>':'')
           +'<span class="week-total">'+fmt(tot)+'<small>min</small></span>'
@@ -1109,7 +1240,9 @@
         wIdx++;
         if(w.id===inlineEditId){ html+=editCardHtml(w,wIdx); return; }
         var v=vol(w); var pc=v.total?Math.round(v.cam/v.total*100):0;
-        html+='<div class="wcard" data-id="'+w.id+'">'
+        var ehProximo=(w.id===proximoId);
+        html+='<div class="wcard'+(ehProximo?' proximo':'')+'" data-id="'+w.id+'">'
+          +(ehProximo?'<div class="wc-proximo">Seu próximo treino</div>':'')
           +'<div class="wcard-top"><div class="wc-title">Treino '+wIdx+(w.name?'<span class="wc-type">'+esc(w.name)+'</span>':'')+'</div>'
           +'<label class="wc-check'+(w.executed?' done':'')+'"><input type="checkbox" class="exec-check" data-id="'+w.id+'"'+(w.executed?' checked':'')+'><span>'+(w.executed?'Executado':'Marcar executado')+'</span></label></div>'
           +(dataValida(w.data)?'<div class="wc-data">'+esc(dataExtenso(w.data))+'</div>':'')
