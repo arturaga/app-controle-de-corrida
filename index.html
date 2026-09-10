@@ -169,6 +169,9 @@
   .kpi.acwr .num{font-size:34px;}
   .kpi.acwr.ok .num{color:var(--ok);} .kpi.acwr.warn .num{color:var(--warn);}
   .kpi.acwr.risk .num{color:var(--danger);} .kpi.acwr.low .num{color:var(--cam);}
+  .wc-data{font-size:12px;font-weight:700;color:var(--orange);text-transform:capitalize;margin-bottom:5px;}
+  .weekgrp.atual{border-color:var(--orange);box-shadow:0 0 0 1px var(--line-2), var(--shadow);}
+  .week-agora{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;background:var(--trote-bg);color:var(--orange);padding:3px 9px;border-radius:20px;white-space:nowrap;}
   .wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
   .wcard{border:1px solid var(--line);border-radius:var(--r);background:var(--card);padding:14px 16px;display:flex;flex-direction:column;}
   .wcard-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px;flex-wrap:wrap;}
@@ -193,6 +196,7 @@
   .wc-edit-grid{display:grid;grid-template-columns:90px 1fr;gap:10px;margin-bottom:10px;}
   .wc-edit-f{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600;}
   .wcard.editing .ie-type-other{grid-column:1 / -1;}
+  .wcard.editing input.ie-data,
   .wcard.editing input.ie-week,.wcard.editing select.ie-type,.wcard.editing input.ie-type-other,.wcard.editing textarea.ie-text{width:100%;border:1px solid var(--line-2);background:var(--card-2);border-radius:var(--r-sm);padding:8px 10px;font-family:var(--sans);font-size:14px;color:var(--ink);}
   .wcard.editing textarea.ie-text{resize:vertical;min-height:120px;line-height:1.5;margin-bottom:10px;font-size:13px;}
   .wcard.editing input:focus,.wcard.editing select:focus,.wcard.editing textarea:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-glow);}
@@ -303,6 +307,10 @@
         <label for="fWeek">Semana</label>
         <input id="fWeek" type="number" min="1" step="1" value="1">
       </div>
+      <div class="field">
+        <label for="fDate">Data (opcional)</label>
+        <input id="fDate" type="date">
+      </div>
       <div class="field f-tipo">
         <label for="fTypeSelect">Tipo (opcional)</label>
         <select id="fTypeSelect"><option value="">— nenhum —</option><option value="Contínuo">Contínuo</option><option value="Intervalado">Intervalado</option><option value="Fartlek">Fartlek</option><option value="Misto">Misto</option><option value="__other__">Outro…</option></select>
@@ -396,6 +404,31 @@
   }
   function vol(w){var r=parseWorkout(w.text,state.defaultMode);return {cam:r.cam,trote:r.trote,total:Math.round((r.cam+r.trote)*10)/10};}
   function fmt(n){ return (Math.round(n*10)/10).toString().replace('.',','); }
+  /* ---------------- Datas ----------------
+     Treino pode ter 'data' (AAAA-MM-DD). Os treinos antigos nao tem, e
+     continuam validos: a semana segue sendo a unidade de agrupamento. */
+  var DIAS=['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+  var MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  function dataValida(s){ return typeof s==='string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+  function dataObj(s){ if(!dataValida(s)) return null; var p=s.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
+  function hojeObj(){ var d=new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  function dataExtenso(s){
+    var d=dataObj(s); if(!d) return '';
+    var dia=DIAS[d.getDay()];
+    return dia.charAt(0).toUpperCase()+dia.slice(1)+', '+d.getDate()+' de '+MESES[d.getMonth()];
+  }
+  function diasEntre(a,b){ return Math.round((b-a)/86400000); }
+  // Semana que contem hoje, deduzida dos treinos datados. null se nao houver.
+  function semanaAtual(){
+    var hoje=hojeObj(), datados=state.workouts.filter(function(w){return dataValida(w.data);});
+    if(!datados.length) return null;
+    var melhor=null, menor=Infinity;
+    datados.forEach(function(w){
+      var d=Math.abs(diasEntre(dataObj(w.data), hoje));
+      if(d<menor){ menor=d; melhor=w.week; }
+    });
+    return melhor;
+  }
   function fmt2(n){ return (Math.round(n*100)/100).toFixed(2).replace('.',','); }
 
   /* ---------------- Persistência (window.storage + memória) ---------------- */
@@ -874,10 +907,38 @@
      +kpi('', 'Executados', done+' <small>/ '+n+'</small>', (n-done)+' pendentes')
      +acwrKpi();
   }
+  /* ACWR por dia corrido (7:28), so possivel onde ha historico datado.
+     Enquanto nao houver 28 dias datados, o app segue na aproximacao semanal
+     -- e o rodape do KPI diz qual dos dois esta em uso. */
+  function volumeNaJanela(fim, dias, mode){
+    var ini=new Date(fim.getTime()); ini.setDate(ini.getDate()-(dias-1));
+    var tot=0;
+    state.workouts.forEach(function(w){
+      var d=dataObj(w.data); if(!d) return;
+      if(d>=ini && d<=fim){ var r=parseWorkout(w.text,mode); tot+=r.cam+r.trote; }
+    });
+    return Math.round(tot*10)/10;
+  }
+  function coberturaDatada(){
+    var ds=[];
+    state.workouts.forEach(function(w){ var d=dataObj(w.data); if(d) ds.push(d.getTime()); });
+    if(!ds.length) return 0;
+    return diasEntre(new Date(Math.min.apply(null,ds)), hojeObj())+1;
+  }
+  function acwrReal(){
+    var mode=state.defaultMode==='trote'?'trote':'cam', hoje=hojeObj();
+    var cronica=volumeNaJanela(hoje,28,mode)/4;
+    if(!cronica) return null;
+    return volumeNaJanela(hoje,7,mode)/cronica;
+  }
+
   function acwrKpi(){
-    var a=latestAcwr(), z=(a===null?null:acwrZone(a));
+    var real=(coberturaDatada()>=28)?acwrReal():null;
+    var a=(real!==null)?real:latestAcwr();
+    var modo=(real!==null)?'7:28 dias':'aproximação semanal';
+    var z=(a===null?null:acwrZone(a));
     var num=(a===null?'—':fmt2(a));
-    var foot=(a===null?'precisa de 4 semanas':(z.label+' · seguro 0,80–1,30'));
+    var foot=(a===null?'precisa de 4 semanas':(z.label+' · '+modo));
     return kpi('acwr'+(z?' '+z.cls:''), 'Carga aguda:crônica', num, foot);
   }
   function kpi(cls,lab,num,foot){
@@ -985,7 +1046,7 @@
     var mesoPeak={};
     Object.keys(mesoGroups).forEach(function(mc){ mesoPeak[mc]=calcPeak(m,mesoGroups[mc]); });
 
-    var prevTotal=null, html='', lastMeso=null;
+    var prevTotal=null, html='', lastMeso=null, semAtual=semanaAtual();
     weeks.forEach(function(wk){
       var mc=mesocicloOf(wk);
       if(mc!==lastMeso){
@@ -1035,7 +1096,9 @@
 
       var dupHtml=isAluno?'':'<button type="button" class="week-dup" data-act="dup-week" data-week="'+wk+'" title="Copiar os treinos desta semana para a próxima semana livre, como não executados">Duplicar</button>';
 
-      html+='<div class="card weekgrp"><div class="week-head"><h3>Semana '+wk+'</h3>'
+      var ehAtual = (wk===semAtual);
+      html+='<div class="card weekgrp'+(ehAtual?' atual':'')+'" data-week="'+wk+'"><div class="week-head"><h3>Semana '+wk+'</h3>'
+          +(ehAtual?'<span class="week-agora">esta semana</span>':'')
           +'<span class="week-total">'+fmt(tot)+'<small>min</small></span>'
           +(isAluno?'':deltaHtml)
           +'<span class="week-split">caminhada '+fmt(Math.round(c*10)/10)+' · trote '+fmt(Math.round(t*10)/10)+' min · '+list.length+' treino'+(list.length>1?'s':'')+'</span>'
@@ -1049,6 +1112,7 @@
         html+='<div class="wcard" data-id="'+w.id+'">'
           +'<div class="wcard-top"><div class="wc-title">Treino '+wIdx+(w.name?'<span class="wc-type">'+esc(w.name)+'</span>':'')+'</div>'
           +'<label class="wc-check'+(w.executed?' done':'')+'"><input type="checkbox" class="exec-check" data-id="'+w.id+'"'+(w.executed?' checked':'')+'><span>'+(w.executed?'Executado':'Marcar executado')+'</span></label></div>'
+          +(dataValida(w.data)?'<div class="wc-data">'+esc(dataExtenso(w.data))+'</div>':'')
           +'<div class="wc-text">'+esc(w.text||'')+'</div>'
           +'<div class="wc-bar"><div class="fc" style="width:'+pc+'%"></div><div class="ft" style="width:'+(100-pc)+'%"></div></div>'
           +'<div class="wc-meta"><span><b>'+fmt(v.total)+'</b> min total</span><span>caminhada '+fmt(v.cam)+' · trote '+fmt(v.trote)+' min</span></div>'
@@ -1071,6 +1135,7 @@
       +'<div class="wc-edit-head">Editar Treino '+idx+'</div>'
       +'<div class="wc-edit-grid">'
         +'<label class="wc-edit-f"><span>Semana</span><input type="number" min="1" class="ie-week" value="'+w.week+'"></label>'
+        +'<label class="wc-edit-f"><span>Data</span><input type="date" class="ie-data" value="'+(dataValida(w.data)?w.data:'')+'"></label>'
         +'<label class="wc-edit-f"><span>Tipo</span><select class="ie-type">'+typeOpts+'</select></label>'
         +'<input type="text" class="ie-type-other" placeholder="Nome do novo tipo" value="'+(isOther?esc(w.name):'')+'"'+(isOther?'':' style="display:none"')+'>'
       +'</div>'
@@ -1152,6 +1217,7 @@
     setSelectedTipo('');
     document.getElementById('fText').value=TEXT_TEMPLATE;
     document.getElementById('fExec').checked=false;
+    document.getElementById('fDate').value='';
     var mx=state.workouts.reduce(function(a,w){return Math.max(a,w.week);},0);
     document.getElementById('fWeek').value=mx||1;
     document.getElementById('formTitle').textContent='Adicionar treino';
@@ -1175,12 +1241,13 @@
     var name=getSelectedTipo();
     var text=document.getElementById('fText').value;
     var exec=document.getElementById('fExec').checked;
+    var data=document.getElementById('fDate').value||'';
     if(!text.trim() || text.trim()===TEXT_TEMPLATE.trim()){ document.getElementById('fText').focus(); return; }
     if(editingId){
       var w=state.workouts.filter(function(x){return x.id===editingId;})[0];
-      if(w){w.week=week;w.name=name;w.text=text;w.executed=exec;}
+      if(w){w.week=week;w.name=name;w.text=text;w.executed=exec;w.data=data;}
     } else {
-      state.workouts.push({id:'w'+Date.now()+Math.floor(Math.random()*999),week:week,name:name,text:text,executed:exec});
+      state.workouts.push({id:'w'+Date.now()+Math.floor(Math.random()*999),week:week,name:name,text:text,executed:exec,data:data});
     }
     await saveState(); resetForm(); render();
     setFormCollapsed(true);
@@ -1222,6 +1289,7 @@
       var itxt=card.querySelector('.ie-text').value;
       if(!itxt.trim()){ card.querySelector('.ie-text').focus(); return; }
       w.week=iw; w.name=inm; w.text=itxt; w.executed=card.querySelector('.ie-exec').checked;
+      var idt=card.querySelector('.ie-data'); w.data=idt?(idt.value||''):'';
       if(inm && state.tipos.indexOf(inm)<0){ state.tipos.push(inm); rebuildTypeOptions(); }
       inlineEditId=null;
       await saveState(); render();
