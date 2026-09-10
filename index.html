@@ -702,18 +702,31 @@
       return '<option value="'+esc(s.id)+'"'+(s.id===roster.currentId?' selected':'')+'>'+esc(s.name)+'</option>';
     }).join('');
   }
+  // Trocar de aluna e assincrono e mexe em globais (roster.currentId, state).
+  // Sem trava, dois cliques rapidos se intercalam e o estado de uma aluna
+  // acaba gravado na chave de outra. Duas defesas: a trava de reentrancia e
+  // salvar com a chave e o estado capturados ANTES de qualquer await, em vez
+  // de deixar saveState() reler os globais ja alterados.
+  var trocandoAluna=false;
   async function switchStudent(id){
-    if(id===roster.currentId) return;
-    await saveState();
-    roster.currentId=id;
-    var loaded=await loadState();
-    state=loaded?normalizeState(loaded):emptyStudentState('Aluna');
-    await saveKey(ROSTER_KEY,roster);
-    rebuildAlunaOptions(); resetForm(); render();
+    if(trocandoAluna || id===roster.currentId) return;
+    trocandoAluna=true;
+    try{
+      var deId=roster.currentId, instantaneo=state;
+      await saveKey(studentKey(deId), instantaneo);
+      roster.currentId=id;
+      var loaded=await loadKey(studentKey(id));
+      state=loaded?normalizeState(loaded):emptyStudentState('Aluna');
+      await saveKey(ROSTER_KEY,roster);
+      rebuildAlunaOptions(); resetForm(); render();
+    } finally { trocandoAluna=false; }
   }
   async function newStudent(){
+    if(trocandoAluna) return;
     var name=(window.prompt('Nome da nova aluna:')||'').trim();
     if(!name) return;
+    trocandoAluna=true;
+    try{
     await saveState();
     var id='s'+Date.now()+Math.floor(Math.random()*999);
     roster.students.push({id:id,name:name});
@@ -723,6 +736,7 @@
     await saveKey(studentKey(id),state);
     await saveKey(ROSTER_KEY,roster);
     rebuildAlunaOptions(); resetForm(); render();
+    } finally { trocandoAluna=false; }
   }
   async function renameStudent(){
     var cur=roster.students.filter(function(s){return s.id===roster.currentId;})[0];
