@@ -430,7 +430,8 @@
       if(sub>0){cam+=tot*r.cam/sub;trote+=tot*r.trote/sub;} return ' ';
     });
     // distância em Km com ritmo: N km (M:SS) — plano de corrida por pace
-    t=t.replace(/(\d+(?:\.\d+)?)\s*km?\.?\s*(?:z\d\s*)?\(?(\d{1,2}:\d{2})\)?/g,function(m0,km,pace){
+    // aceita "8Km Z2 (5:45)", "5 km 6:00" e tambem "3k pace 6:30"
+    t=t.replace(/(\d+(?:\.\d+)?)\s*km?\.?\s*(?:z\d\s*)?(?:(?:pace|ritmo)\s*)?\(?(\d{1,2}:\d{2})\)?/g,function(m0,km,pace){
       var mins=parseFloat(km)*parseTime(pace);
       if(classify(m0,mode)==='trote') trote+=mins; else cam+=mins;
       return ' ';
