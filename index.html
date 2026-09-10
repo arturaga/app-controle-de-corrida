@@ -51,7 +51,7 @@
   .aluna-row button.armed{background:var(--danger);border-color:var(--danger);color:#fff;}
 
   /* KPIs */
-  .roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-bottom:16px;}
+  .roster{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-bottom:20px;}
   .rcard{text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:11px 13px;box-shadow:var(--shadow);color:var(--ink);font-size:14px;display:flex;flex-direction:column;align-items:flex-start;gap:5px;}
   .rcard:hover{border-color:var(--line-2);}
   .rcard.active{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-glow);}
@@ -76,7 +76,7 @@
   body.aluno .aluna, body.aluno #roster, body.aluno #chartCard,
   body.aluno .form-card, body.aluno .foot-actions{display:none;}
   body.aluno .kpis{grid-template-columns:repeat(2,1fr);}
-  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px;}
   .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow);}
   .kpi .lab{font-size:11.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);font-weight:600;}
   .kpi .num{font-family:var(--disp);font-size:38px;font-weight:600;line-height:1;margin-top:6px;font-variant-numeric:tabular-nums;}
@@ -170,6 +170,15 @@
   .kpi.acwr.ok .num{color:var(--ok);} .kpi.acwr.warn .num{color:var(--warn);}
   .kpi.acwr.risk .num{color:var(--danger);} .kpi.acwr.low .num{color:var(--cam);}
   body.aluno .kpis{display:block;}
+  .festa{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:120;background:var(--orange);color:#0b0b0b;font-weight:800;font-size:14px;padding:11px 20px;border-radius:30px;box-shadow:0 8px 28px rgba(249,115,22,.45);animation:sobe .32s cubic-bezier(.2,.9,.3,1.4);pointer-events:none;}
+  .festa.grande{font-size:17px;padding:15px 26px;bottom:auto;top:44%;}
+  .festa.sai{opacity:0;transition:opacity .55s;}
+  @keyframes sobe{from{opacity:0;transform:translate(-50%,16px) scale(.9);}to{opacity:1;transform:translate(-50%,0) scale(1);}}
+  body.aluno .wc-check{padding:7px 11px;border-radius:20px;background:var(--card-2);border:1px solid var(--line);font-size:13px;}
+  body.aluno .wc-check input{width:19px;height:19px;}
+  body.aluno .wcard.feito{opacity:.62;}
+  body.aluno .wcard.feito:hover{opacity:1;}
+  body.aluno .wcard{padding:16px;}
   .hero{display:flex;align-items:center;gap:18px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--shadow);margin-bottom:12px;}
   .hero-anel{position:relative;width:104px;height:104px;flex-shrink:0;}
   .anel{width:104px;height:104px;transform:rotate(-90deg);}
@@ -964,6 +973,16 @@
       {i:'🎖', n:'50 treinos',          ok:a.treinos>=50}
     ];
   }
+  // Comemoracao curta ao marcar; maior ao fechar a semana.
+  function comemora(msg, grande){
+    var el=document.createElement('div');
+    el.className='festa'+(grande?' grande':'');
+    el.textContent=msg;
+    document.body.appendChild(el);
+    var vida=grande?2200:1400;
+    setTimeout(function(){ el.classList.add('sai'); }, vida);
+    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, vida+600);
+  }
   function horasMin(min){
     var h=Math.floor(min/60), r=min%60;
     return h? (h+'h'+(r?(' '+r+'min'):'')) : (r+'min');
@@ -1241,7 +1260,7 @@
         if(w.id===inlineEditId){ html+=editCardHtml(w,wIdx); return; }
         var v=vol(w); var pc=v.total?Math.round(v.cam/v.total*100):0;
         var ehProximo=(w.id===proximoId);
-        html+='<div class="wcard'+(ehProximo?' proximo':'')+'" data-id="'+w.id+'">'
+        html+='<div class="wcard'+(ehProximo?' proximo':'')+(isAluno&&w.executed?' feito':'')+'" data-id="'+w.id+'">'
           +(ehProximo?'<div class="wc-proximo">Seu próximo treino</div>':'')
           +'<div class="wcard-top"><div class="wc-title">Treino '+wIdx+(w.name?'<span class="wc-type">'+esc(w.name)+'</span>':'')+'</div>'
           +'<label class="wc-check'+(w.executed?' done':'')+'"><input type="checkbox" class="exec-check" data-id="'+w.id+'"'+(w.executed?' checked':'')+'><span>'+(w.executed?'Executado':'Marcar executado')+'</span></label></div>'
@@ -1451,6 +1470,11 @@
           if(ok!==true) throw new Error('recusado');
           if(w) w.executed=want;
           render();
+          if(want){
+            var mm=byWeek(), wf=semanaFoco();
+            if(wf!==null && semanaCompleta(mm,wf)) comemora('Semana completa! 🎉', true);
+            else comemora('Treino marcado 💪');
+          }
         }catch(err){
           chk.checked=!want; chk.disabled=false;
           window.alert('Não consegui salvar agora. Verifique a conexão e tente de novo.');
