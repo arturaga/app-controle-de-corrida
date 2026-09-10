@@ -1,0 +1,19 @@
+# Fotos originais do celular. Só as versões comprimidas (bg-login.jpg e
+# bg-app.jpg) vão pro site; estas ficam só na sua máquina.
+Fotos app/
+
+# Sobra de "salvar página como" do navegador. O app não usa nada daqui —
+# Chart.js e as fontes vêm por CDN.
+Painel de Volume — Artur Almeida Personal Trainer_files/
+
+# Configuração local do Claude Code, específica desta máquina.
+.claude/
+
+# Anotações e atalhos locais. O conversa-*.md contém nomes e planos de
+# treino de alunas reais — não pode ir pro repositório público.
+conversa-painel-volume-treino.md
+Abrir App (online).url
+logo-small.png
+
+# Arquivos temporários de verificação (_aluno-check.html, _contato.html…)
+_*.html
