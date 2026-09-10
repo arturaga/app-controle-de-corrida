@@ -25,8 +25,9 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:960px;margin:0 auto;padding:24px 18px 72px;position:relative;z-index:1;}
-  #bgPhoto{position:fixed;inset:0;z-index:0;pointer-events:none;background:url('bg-app.jpg') center top/cover no-repeat;}
-  #bgPhoto::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,9,9,.70) 0%,rgba(9,9,9,.90) 42%,rgba(9,9,9,.97) 100%);}
+  #bgPhoto{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;}
+  #bgPhoto::before{content:'';position:absolute;inset:-3%;background:url('bg-app.jpg') center top/cover no-repeat;filter:saturate(.55) blur(3px);}
+  #bgPhoto::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,9,9,.87) 0%,rgba(9,9,9,.955) 40%,rgba(9,9,9,.99) 100%);}
   h1,h2,h3{margin:0;font-family:var(--disp);font-weight:400;letter-spacing:.2px;line-height:1.05;}
   button{font-family:var(--sans);cursor:pointer;}
   a{color:var(--orange);}
