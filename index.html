@@ -473,7 +473,11 @@
     return dia.charAt(0).toUpperCase()+dia.slice(1)+', '+d.getDate()+' de '+MESES[d.getMonth()];
   }
   function diasEntre(a,b){ return Math.round((b-a)/86400000); }
-  // Semana que contem hoje, deduzida dos treinos datados. null se nao houver.
+  /* Semana que contem hoje, deduzida dos treinos datados. null se nao houver.
+     Poucos treinos tem data, entao o mais proximo de hoje pode ser de meses
+     atras -- isso nao e "esta semana". Fora da folga abaixo, devolve null e
+     quem chama decide pelo progresso. */
+  var DATA_SLACK_DIAS=14;
   function semanaAtual(){
     var hoje=hojeObj(), datados=state.workouts.filter(function(w){return dataValida(w.data);});
     if(!datados.length) return null;
@@ -482,7 +486,7 @@
       var d=Math.abs(diasEntre(dataObj(w.data), hoje));
       if(d<menor){ menor=d; melhor=w.week; }
     });
-    return melhor;
+    return menor>DATA_SLACK_DIAS ? null : melhor;
   }
   function fmt2(n){ return (Math.round(n*100)/100).toFixed(2).replace('.',','); }
 
@@ -948,7 +952,16 @@
     if(sa!==null) return sa;
     var m=byWeek(), weeks=Object.keys(m).map(Number).sort(function(a,b){return a-b;});
     if(!weeks.length) return null;
+    /* Sem data utilizavel, o "hoje" sai do progresso: a semana em curso e a
+       primeira pendente a partir da ultima em que ela treinou. Treino pulado
+       semanas atras nao puxa o foco de volta -- semana passada fica
+       minimizada mesmo com treino em aberto. */
+    var ultimaTreinada=0;
+    weeks.forEach(function(wk){
+      if(m[wk].filter(function(w){return w.executed;}).length) ultimaTreinada=wk;
+    });
     for(var i=0;i<weeks.length;i++){
+      if(weeks[i]<ultimaTreinada) continue;
       var pendente=m[weeks[i]].filter(function(w){return !w.executed;}).length;
       if(pendente) return weeks[i];
     }
