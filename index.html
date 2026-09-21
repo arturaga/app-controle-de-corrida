@@ -257,6 +257,8 @@
   .foot-actions{display:flex;gap:10px;}
   .foot-actions button{border:1px solid var(--line-2);background:var(--card);border-radius:var(--r-sm);padding:8px 14px;font-size:13px;font-weight:600;color:var(--ink-2);}
   .foot-actions .danger.armed{background:var(--danger);border-color:var(--danger);color:#fff;}
+  .foot-actions button.armed{background:var(--danger);border-color:var(--danger);color:#fff;}
+  #undoBtn{border-color:var(--orange);color:var(--orange);font-weight:700;}
   .storenote{font-size:12px;color:var(--muted);}
 
   @media (max-width:640px){
@@ -393,6 +395,7 @@
   <footer>
     <div class="storenote" id="storeNote">Alterações valem nesta sessão (abra dentro do Claude para salvar entre sessões).</div>
     <div class="foot-actions">
+      <button id="undoBtn" hidden>Desfazer</button>
       <button id="loadExample">Carregar plano de exemplo</button>
       <button id="clearAll" class="danger">Limpar tudo</button>
     </div>
@@ -654,6 +657,62 @@
     }
   }
 
+  /* ---------------- Desfazer (rede de seguranca) ----------------
+     Antes de trocar o plano inteiro -- exemplo ou limpeza -- guarda uma copia
+     do estado atual. Vai pra nuvem junto com o resto, entao o desfazer vale
+     mesmo trocando de aparelho. Guarda so a ultima: isto e rede pro tropeco,
+     nao historico. O desfazer troca as duas pontas, entao nada se perde --
+     clicar de novo volta pra onde estava. */
+  function undoKey(id){ return 'mfit_undo_v1_'+id; }
+  var undoAtual=null;
+  function tempoRelativo(ts){
+    var seg=Math.max(0,Math.round((Date.now()-ts)/1000));
+    if(seg<60) return 'agora há pouco';
+    var min=Math.round(seg/60); if(min<60) return 'há '+min+' min';
+    var h=Math.round(min/60);   if(h<24)  return 'há '+h+'h';
+    var d=Math.round(h/24);     return 'há '+d+' dia'+(d>1?'s':'');
+  }
+  function renderUndo(){
+    var b=document.getElementById('undoBtn'); if(!b) return;
+    if(!undoAtual||!undoAtual.state){ b.hidden=true; return; }
+    var lista=undoAtual.state.workouts||[];
+    var feitos=lista.filter(function(w){return w.executed;}).length;
+    b.hidden=false;
+    b.title='Restaura o plano como estava '+(undoAtual.motivo||'antes da última troca')
+      +' — '+lista.length+' treino'+(lista.length===1?'':'s')
+      +(feitos?(', '+feitos+' marcado'+(feitos===1?'':'s')):'')+', '+tempoRelativo(undoAtual.ts)+'.';
+  }
+  async function guardaUndo(motivo){
+    undoAtual={ts:Date.now(), motivo:motivo, state:JSON.parse(JSON.stringify(state))};
+    renderUndo();
+    await saveKey(undoKey(roster.currentId), undoAtual);
+  }
+  async function carregaUndo(){
+    undoAtual=null; renderUndo();
+    var alvo=roster.currentId;
+    try{
+      var s=await loadKey(undoKey(alvo));
+      if(alvo!==roster.currentId) return;            // trocou de aluno no meio
+      if(s&&s.state&&s.state.workouts) undoAtual=s;
+    }catch(e){}
+    renderUndo();
+  }
+  async function desfazer(){
+    var snap=undoAtual;
+    if(!snap||!snap.state||trocandoAluna) return;
+    var trocado={ts:Date.now(), motivo:'antes do desfazer', state:JSON.parse(JSON.stringify(state))};
+    state=normalizeState(JSON.parse(JSON.stringify(snap.state)));
+    undoAtual=trocado;
+    var cur=roster.students.filter(function(x){return x.id===roster.currentId;})[0];
+    if(cur && state.aluna && cur.name!==state.aluna){
+      cur.name=state.aluna; await saveKey(ROSTER_KEY,roster); rebuildAlunaOptions();
+    }
+    resetForm();
+    await saveState();
+    await saveKey(undoKey(roster.currentId), trocado);
+    render(); renderUndo();
+  }
+
   /* ---------------- Plano de exemplo (adaptacao caminhada/corrida) ---------------- */
   function seedData(){
     var S=function(w,name,text,exec){return {id:'w'+(idc++),week:w,name:name,text:text,executed:exec};};
@@ -813,6 +872,7 @@
       await saveKey(ROSTER_KEY,roster);
       rebuildAlunaOptions(); resetForm(); render();
     } finally { trocandoAluna=false; }
+    carregaUndo();
   }
   async function newStudent(){
     if(trocandoAluna) return;
@@ -830,6 +890,7 @@
     await saveKey(ROSTER_KEY,roster);
     rebuildAlunaOptions(); resetForm(); render();
     } finally { trocandoAluna=false; }
+    carregaUndo();
   }
   async function renameStudent(){
     var cur=roster.students.filter(function(s){return s.id===roster.currentId;})[0];
@@ -890,6 +951,7 @@
     }
     await saveKey(ROSTER_KEY,roster);
     rebuildAlunaOptions(); resetForm(); render();
+    carregaUndo();
   }
 
   function ordered(){
@@ -1587,16 +1649,30 @@
   document.getElementById('clearAll').addEventListener('click',async function(){
     var b=this;
     if(clrArmed){ clrArmed=false; clearTimeout(clrTimer); b.classList.remove('armed'); b.textContent='Limpar tudo';
+      if(state.workouts.length) await guardaUndo('antes da limpeza');
       state.workouts=[]; state.weekMeta={}; state.tipos=['Contínuo','Intervalado','Fartlek','Misto']; resetForm(); await saveState(); render(); return; }
     clrArmed=true; b.classList.add('armed'); b.textContent='Confirmar limpeza?';
     clrTimer=setTimeout(function(){clrArmed=false;b.classList.remove('armed');b.textContent='Limpar tudo';},3000);
   });
+  /* Substitui o plano inteiro do aluno selecionado: pede o segundo clique,
+     como o "Limpar tudo" ao lado, e guarda copia do que estava la. */
+  var exArmed=false, exTimer=null;
+  function exDesarma(b){ exArmed=false; if(exTimer){clearTimeout(exTimer);exTimer=null;} b.classList.remove('armed'); b.textContent='Carregar plano de exemplo'; }
   document.getElementById('loadExample').addEventListener('click',async function(){
+    var b=this;
+    if(!exArmed){
+      exArmed=true; b.classList.add('armed'); b.textContent='Isto substitui o plano. Confirmar?';
+      exTimer=setTimeout(function(){ exDesarma(b); },4000);
+      return;
+    }
+    exDesarma(b);
+    if(state.workouts.length) await guardaUndo('antes do plano de exemplo');
     var seed=seedData(); state.aluna=state.aluna||seed.aluna; state.workouts=seed.workouts; state.weekMeta=seed.weekMeta; state.tipos=seed.tipos;
     var cur=roster.students.filter(function(s){return s.id===roster.currentId;})[0];
     if(cur){ cur.name=state.aluna; await saveKey(ROSTER_KEY,roster); rebuildAlunaOptions(); }
     resetForm(); await saveState(); render();
   });
+  document.getElementById('undoBtn').addEventListener('click',desfazer);
 
   /* ---------------- Listeners gerais ---------------- */
   document.getElementById('fTypeSelect').addEventListener('change',function(){
@@ -1657,6 +1733,7 @@
     await loadAllStudents();
     rosterStates[roster.currentId]=state; // o estado vivo manda sobre a copia da nuvem
     renderRoster();
+    carregaUndo();
   }
 
   document.getElementById('loginForm').addEventListener('submit',async function(ev){
