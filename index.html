@@ -1572,6 +1572,9 @@
       var inm= tsel==='__other__' ? (card.querySelector('.ie-type-other').value||'').trim() : tsel;
       var itxt=card.querySelector('.ie-text').value;
       if(!itxt.trim()){ card.querySelector('.ie-text').focus(); return; }
+      // Sobrescrever o texto de um treino nao tem volta; guarda copia antes.
+      var mudou = (w.text!==itxt) || (w.week!==iw) || (w.name!==inm);
+      if(mudou) await guardaUndo('antes da edição de um treino');
       w.week=iw; w.name=inm; w.text=itxt; w.executed=card.querySelector('.ie-exec').checked;
       var idt=card.querySelector('.ie-data'); w.data=idt?(idt.value||''):'';
       if(inm && state.tipos.indexOf(inm)<0){ state.tipos.push(inm); rebuildTypeOptions(); }
