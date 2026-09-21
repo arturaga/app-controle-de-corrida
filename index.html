@@ -218,6 +218,31 @@
   .week-toggle{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);white-space:nowrap;}
   .week-toggle i{font-style:normal;font-size:13px;line-height:1;transition:transform .2s;}
   body.aluno .weekgrp.min.aberta .week-toggle i{transform:rotate(180deg);}
+  /* Retorno do aluno: nota de esforco (1-10) + recado escrito. */
+  .fb-box{margin-top:11px;border-top:1px solid var(--line);padding-top:11px;}
+  .fb-titulo{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px;}
+  /* Grade que se ajusta: 5 por linha no celular, os 10 em linha unica quando cabe. */
+  .fb-escala{display:grid;grid-template-columns:repeat(auto-fit,minmax(44px,1fr));gap:6px;margin-bottom:9px;}
+  .fb-nota{padding:9px 0;border:1px solid var(--line-2);background:var(--card-2);border-radius:var(--r-xs);font-family:var(--disp);font-size:15px;font-weight:600;color:var(--ink-2);cursor:pointer;text-align:center;}
+  .fb-nota:hover{border-color:var(--orange);color:var(--orange);}
+  .fb-nota[aria-pressed="true"]{background:var(--orange);border-color:var(--orange);color:#0b0b0b;}
+  .fb-escala-pes{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);font-weight:600;margin:-5px 0 9px;}
+  .fb-txt{width:100%;border:1px solid var(--line-2);background:var(--card-2);border-radius:var(--r-sm);padding:9px 11px;font-family:var(--sans);font-size:13.5px;color:var(--ink);resize:vertical;min-height:64px;}
+  .fb-txt:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-glow);}
+  .fb-acoes{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;}
+  .fb-salvar{border:1px solid var(--orange);background:transparent;border-radius:20px;padding:6px 15px;font-size:12.5px;font-weight:700;color:var(--orange);cursor:pointer;}
+  .fb-salvar:hover{background:var(--orange);color:#0b0b0b;}
+  .fb-estado{font-size:12px;font-weight:600;color:var(--muted);}
+  .fb-estado.ok{color:var(--ok);} .fb-estado.erro{color:var(--danger);}
+  .fb-conta{font-size:11px;color:var(--muted);margin-left:auto;}
+  .fb-conta.perto{color:var(--warn);}
+  /* Resumo do que ele ja escreveu, nas duas telas. */
+  .fb-resumo{margin-top:11px;border-left:3px solid var(--orange);background:var(--card-2);border-radius:0 var(--r-xs) var(--r-xs) 0;padding:9px 12px;}
+  .fb-resumo .fb-rpe{font-size:12.5px;font-weight:800;color:var(--orange);}
+  .fb-resumo .fb-nota-txt{font-size:13px;color:var(--ink-2);white-space:pre-wrap;margin-top:4px;line-height:1.45;}
+  .fb-resumo .fb-quando{font-size:11px;color:var(--muted);margin-top:5px;}
+  .fb-editar{background:none;border:none;color:var(--orange);font-size:12px;font-weight:700;cursor:pointer;padding:0;margin-top:6px;text-decoration:underline;}
+  .week-esforco{font-size:12px;font-weight:700;padding:3px 11px;border-radius:20px;background:var(--trote-bg);color:var(--orange);white-space:nowrap;}
   .wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
   .wcard{border:1px solid var(--line);border-radius:var(--r);background:var(--card);padding:14px 16px;display:flex;flex-direction:column;}
   .wcard-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px;flex-wrap:wrap;}
@@ -1258,6 +1283,62 @@
     else{chart=new Chart(cv,cfg);}
   }
 
+  /* ---------------- Retorno do aluno ----------------
+     Guardado no proprio treino, em w.fb = {rpe, nota, ts}. Ausente quer dizer
+     que ele ainda nao respondeu. Quem grava e a funcao aluno_feedback no
+     banco, que valida a nota e o tamanho do texto -- aqui e so a tela. */
+  var FB_MAX=500;
+  var fbAberto={};   // treinos com o painel aberto (id -> true)
+  function fbDe(w){
+    var f=w&&w.fb;
+    if(!f) return null;
+    var rpe=(typeof f.rpe==='number' && f.rpe>=1 && f.rpe<=10) ? Math.round(f.rpe) : null;
+    var nota=(typeof f.nota==='string') ? f.nota : '';
+    if(rpe===null && !nota) return null;
+    return {rpe:rpe, nota:nota, ts:(typeof f.ts==='number'?f.ts:0)};
+  }
+  function fbEsforcoSemana(list){
+    var notas=list.map(fbDe).filter(function(f){return f&&f.rpe!==null;}).map(function(f){return f.rpe;});
+    if(!notas.length) return null;
+    var soma=notas.reduce(function(a,b){return a+b;},0);
+    return {media:soma/notas.length, quantos:notas.length};
+  }
+  // Painel de resposta, so na tela do aluno e so em treino marcado.
+  function fbPainelHtml(w){
+    var f=fbDe(w), aberto=!!fbAberto[w.id];
+    if(f && !aberto){
+      return '<div class="fb-resumo">'
+        +(f.rpe!==null?'<div class="fb-rpe">Esforço '+f.rpe+'/10</div>':'')
+        +(f.nota?'<div class="fb-nota-txt">'+esc(f.nota)+'</div>':'')
+        +'<button type="button" class="fb-editar" data-act="fb-editar" data-id="'+w.id+'">editar</button>'
+        +'</div>';
+    }
+    var notas='';
+    for(var i=1;i<=10;i++){
+      notas+='<button type="button" class="fb-nota" data-act="fb-nota" data-id="'+w.id+'" data-rpe="'+i+'"'
+           + ' aria-pressed="'+(f&&f.rpe===i?'true':'false')+'">'+i+'</button>';
+    }
+    return '<div class="fb-box">'
+      +'<div class="fb-titulo">Como foi esse treino?</div>'
+      +'<div class="fb-escala">'+notas+'</div>'
+      +'<div class="fb-escala-pes"><span>1 · muito leve</span><span>10 · máximo</span></div>'
+      +'<textarea class="fb-txt" data-id="'+w.id+'" maxlength="'+FB_MAX+'" placeholder="Escreva para o seu treinador — como o corpo respondeu, o que pesou, o que foi bem.">'+esc(f?f.nota:'')+'</textarea>'
+      +'<div class="fb-acoes">'
+        +'<button type="button" class="fb-salvar" data-act="fb-salvar" data-id="'+w.id+'">Enviar</button>'
+        +'<span class="fb-estado" data-fb-estado="'+w.id+'"></span>'
+        +'<span class="fb-conta" data-fb-conta="'+w.id+'"></span>'
+      +'</div></div>';
+  }
+  // Na sua tela o retorno e so leitura.
+  function fbTreinadorHtml(w){
+    var f=fbDe(w); if(!f) return '';
+    return '<div class="fb-resumo">'
+      +(f.rpe!==null?'<div class="fb-rpe">Esforço '+f.rpe+'/10</div>':'')
+      +(f.nota?'<div class="fb-nota-txt">'+esc(f.nota)+'</div>':'')
+      +(f.ts?'<div class="fb-quando">'+esc(tempoRelativo(f.ts))+'</div>':'')
+      +'</div>';
+  }
+
   /* ---------------- Render lista ---------------- */
   function renderList(){
     var host=document.getElementById('list');
@@ -1370,6 +1451,9 @@
           +'<span class="week-total">'+fmt(tot)+'<small>min</small></span>'
           +(isAluno?'':deltaHtml)
           +'<span class="week-split">caminhada '+fmt(Math.round(c*10)/10)+' · trote '+fmt(Math.round(t*10)/10)+' min · '+list.length+' treino'+(list.length>1?'s':'')+'</span>'
+          +(function(){ if(isAluno) return '';
+              var e=fbEsforcoSemana(list); if(!e) return '';
+              return '<span class="week-esforco" title="Média das notas de esforço que a aluna deu nesta semana.">esforço médio '+fmt(e.media)+'/10 · '+e.quantos+' de '+list.length+'</span>'; })()
           +(isAluno?'':selectHtml+badgeHtml+acwrHtml)+dupHtml
           +'</div><div class="wgrid">';
       }
@@ -1387,6 +1471,7 @@
           +'<div class="wc-text">'+esc(w.text||'')+'</div>'
           +'<div class="wc-bar"><div class="fc" style="width:'+pc+'%"></div><div class="ft" style="width:'+(100-pc)+'%"></div></div>'
           +'<div class="wc-meta"><span><b>'+fmt(v.total)+'</b> min total</span><span>caminhada '+fmt(v.cam)+' · trote '+fmt(v.trote)+' min</span></div>'
+          +(isAluno ? (w.executed?fbPainelHtml(w):'') : fbTreinadorHtml(w))
           +(isAluno?'':'<div class="wc-actions"><button data-act="edit">Editar</button><button class="del" data-act="del">Excluir</button></div>')
           +'</div>';
       });
@@ -1538,10 +1623,64 @@
     var tg=head.querySelector('.week-toggle');
     if(tg) tg.innerHTML='<span>'+(aberta?'fechar':'ver treinos')+'</span> <i>▾</i>';
   }
+  /* Envio do retorno do aluno. O treino ja esta marcado a esta altura -- isto
+     aqui so acrescenta, entao uma falha nunca desfaz a marcacao: avisa e deixa
+     o texto na tela pra ele tentar de novo. */
+  function fbEstado(id,txt,cls){
+    var el=document.querySelector('[data-fb-estado="'+id+'"]');
+    if(el){ el.textContent=txt||''; el.className='fb-estado'+(cls?' '+cls:''); }
+  }
+  var fbEnviando={};
+  async function enviaFeedback(id, rpe, nota){
+    if(fbEnviando[id]) return false;
+    fbEnviando[id]=true;
+    fbEstado(id,'salvando…','');
+    try{
+      var ok=await rpc('aluno_feedback',{p_token:ALUNO_TOKEN,p_workout_id:id,
+                                         p_rpe:(rpe===null?null:rpe), p_nota:nota||''});
+      if(ok!==true) throw new Error('recusado');
+      var w=state.workouts.filter(function(x){return x.id===id;})[0];
+      if(w){
+        if(rpe===null && !nota) delete w.fb;
+        else w.fb={rpe:rpe, nota:nota||'', ts:Date.now()};
+      }
+      fbEstado(id,'salvo ✓','ok');
+      return true;
+    }catch(err){
+      fbEstado(id,'não consegui salvar — tente de novo','erro');
+      return false;
+    } finally { fbEnviando[id]=false; }
+  }
+  function fbLeCampos(id){
+    var ta=document.querySelector('.fb-txt[data-id="'+id+'"]');
+    var sel=document.querySelector('.fb-nota[data-id="'+id+'"][aria-pressed="true"]');
+    return {nota:(ta?ta.value:'').trim().slice(0,FB_MAX),
+            rpe: sel?parseInt(sel.getAttribute('data-rpe'),10):null};
+  }
   document.getElementById('list').addEventListener('click',async function(e){
     var minHead=e.target.closest('.weekgrp.min > .week-head');
     if(minHead){ toggleSemana(minHead); return; }
     var btn=e.target.closest('button'); if(!btn) return;
+    var fbAct=btn.getAttribute('data-act');
+    if(fbAct==='fb-editar'){ fbAberto[btn.getAttribute('data-id')]=true; renderList(); return; }
+    if(fbAct==='fb-nota'){
+      var nid=btn.getAttribute('data-id'), nota=parseInt(btn.getAttribute('data-rpe'),10);
+      var jaEra=btn.getAttribute('aria-pressed')==='true';
+      var grupo=document.querySelectorAll('.fb-nota[data-id="'+nid+'"]');
+      Array.prototype.forEach.call(grupo,function(b){ b.setAttribute('aria-pressed','false'); });
+      if(!jaEra) btn.setAttribute('aria-pressed','true');   // tocar de novo tira a nota
+      var campos=fbLeCampos(nid);
+      await enviaFeedback(nid, campos.rpe, campos.nota);
+      return;
+    }
+    if(fbAct==='fb-salvar'){
+      var sid=btn.getAttribute('data-id'), c=fbLeCampos(sid);
+      if(await enviaFeedback(sid, c.rpe, c.nota)){
+        fbAberto[sid]=false;
+        setTimeout(function(){ renderList(); }, 700);   // deixa o "salvo" aparecer
+      }
+      return;
+    }
     if(btn.getAttribute('data-act')==='dup-week'){
       var dw=parseInt(btn.getAttribute('data-week'),10);
       var src=state.workouts.filter(function(x){return x.week===dw;});
@@ -1595,6 +1734,13 @@
   });
 
   document.getElementById('list').addEventListener('input',function(e){
+    if(e.target.classList&&e.target.classList.contains('fb-txt')){
+      var id=e.target.getAttribute('data-id'), resta=FB_MAX-e.target.value.length;
+      var c=document.querySelector('[data-fb-conta="'+id+'"]');
+      if(c){ c.textContent = resta<=80 ? (resta+' restantes') : ''; c.className='fb-conta'+(resta<=80?' perto':''); }
+      fbEstado(id,'','');
+      return;
+    }
     if(!e.target.classList||!e.target.classList.contains('ie-text')) return;
     updateInlinePreview(e.target.closest('.wcard'));
   });
@@ -1611,7 +1757,12 @@
           var ok=await rpc('aluno_marcar',{p_token:ALUNO_TOKEN,p_workout_id:id,p_feito:want});
           if(ok!==true) throw new Error('recusado');
           if(w) w.executed=want;
+          if(want) fbAberto[id]=true; else delete fbAberto[id];
           render();
+          if(want){
+            var alvo=document.querySelector('.wcard[data-id="'+id+'"] .fb-box');
+            if(alvo) alvo.scrollIntoView({behavior:'smooth',block:'nearest'});
+          }
           if(want){
             var mm=byWeek(), wf=semanaFoco();
             if(wf!==null && semanaCompleta(mm,wf)) comemora('Semana completa! 🎉', true);
