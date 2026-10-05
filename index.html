@@ -236,6 +236,17 @@
   .wc-actions button:hover{background:var(--card-2);}
   .wc-actions .del.armed{background:var(--danger);border-color:var(--danger);color:#fff;}
 
+  /* Feedback do aluno (texto livre + RPE) */
+  .wc-feedback{margin-bottom:12px;padding-top:11px;border-top:1px dashed var(--line-2);}
+  .wc-fb-label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600;margin-bottom:7px;}
+  .wc-rpe{display:flex;align-items:center;gap:6px;margin-bottom:9px;flex-wrap:wrap;}
+  .rpe-btn{width:27px;height:27px;border-radius:50%;border:1px solid var(--line-2);background:transparent;color:var(--ink-2);font-family:var(--sans);font-size:12px;font-weight:700;flex-shrink:0;}
+  .rpe-btn:hover{border-color:var(--orange);color:var(--orange);}
+  .rpe-btn.on{background:var(--orange);border-color:var(--orange);color:var(--bg);}
+  .wc-rpe-label{font-size:12px;color:var(--muted);margin-left:2px;}
+  .wc-fb-text{width:100%;border:1px solid var(--line-2);background:var(--card-2);border-radius:var(--r-xs);padding:8px 10px;font-family:var(--sans);font-size:12.5px;color:var(--ink);resize:vertical;min-height:52px;line-height:1.45;}
+  .wc-fb-text:focus{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-glow);}
+
   /* Edição inline do treino */
   .wcard.editing{grid-column:1 / -1;border-color:var(--line-2);box-shadow:0 0 0 3px var(--orange-glow);}
   .wc-edit-head{font-family:var(--disp);font-size:16px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--orange);margin-bottom:11px;}
@@ -1387,6 +1398,16 @@
           +'<div class="wc-text">'+esc(w.text||'')+'</div>'
           +'<div class="wc-bar"><div class="fc" style="width:'+pc+'%"></div><div class="ft" style="width:'+(100-pc)+'%"></div></div>'
           +'<div class="wc-meta"><span><b>'+fmt(v.total)+'</b> min total</span><span>caminhada '+fmt(v.cam)+' · trote '+fmt(v.trote)+' min</span></div>'
+          +(w.executed?(
+            '<div class="wc-feedback">'
+              +'<div class="wc-fb-label">Percepção de esforço (RPE)</div>'
+              +'<div class="wc-rpe">'
+                +[1,2,3,4,5].map(function(n){return '<button type="button" class="rpe-btn'+(w.rpe===n?' on':'')+'" data-act="rpe" data-rpe="'+n+'">'+n+'</button>';}).join('')
+                +'<span class="wc-rpe-label">'+rpeLabel(w.rpe)+'</span>'
+              +'</div>'
+              +'<textarea class="wc-fb-text" placeholder="Como foi o treino? (opcional)">'+esc(w.feedback||'')+'</textarea>'
+            +'</div>'
+          ):'')
           +(isAluno?'':'<div class="wc-actions"><button data-act="edit">Editar</button><button class="del" data-act="del">Excluir</button></div>')
           +'</div>';
       });
@@ -1395,6 +1416,7 @@
     host.innerHTML=html;
   }
   function esc(s){return (s+'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function rpeLabel(n){ return {1:'Muito leve',2:'Leve',3:'Moderado',4:'Difícil',5:'Muito difícil'}[n] || 'Sem avaliação'; }
 
   /* ---------------- Edição inline de treino ---------------- */
   function editCardHtml(w,idx){
@@ -1585,6 +1607,13 @@
       if(armed===id){ disarm(); state.workouts=state.workouts.filter(function(x){return x.id!==id;}); if(editingId===id)resetForm(); await saveState(); render(); }
       else{ disarm(); armed=id; btn.classList.add('armed'); btn.textContent='Confirmar?'; armedTimer=setTimeout(function(){var b=document.querySelector('.wcard[data-id="'+id+'"] .del');if(b){b.classList.remove('armed');b.textContent='Excluir';}armed=null;},3000); }
     }
+    else if(act==='rpe'){
+      var novoRpe=parseInt(btn.getAttribute('data-rpe'),10);
+      if(w.rpe===novoRpe) novoRpe=null; // clicar de novo no mesmo nivel desmarca
+      var txtEl=card.querySelector('.wc-fb-text');
+      var okr=await saveFeedback(id, novoRpe, txtEl?txtEl.value:(w.feedback||''));
+      if(okr) render();
+    }
   });
 
   document.getElementById('list').addEventListener('keydown',function(e){
@@ -1592,6 +1621,36 @@
     var minHead=e.target.closest('.weekgrp.min > .week-head');
     if(!minHead) return;
     e.preventDefault(); toggleSemana(minHead);
+  });
+
+  /* Salva feedback (texto + RPE) de um treino: via RPC no modo aluno,
+     direto no estado (ja autenticado) no modo treinador. */
+  async function saveFeedback(id,rpe,texto){
+    var w=state.workouts.filter(function(x){return x.id===id;})[0];
+    if(!w) return false;
+    if(isAluno){
+      try{
+        var ok=await rpc('aluno_feedback',{p_token:ALUNO_TOKEN,p_workout_id:id,p_rpe:rpe,p_texto:texto});
+        if(ok!==true) throw new Error('recusado');
+      }catch(err){
+        window.alert('Não consegui salvar o feedback agora. Verifique a conexão e tente de novo.');
+        return false;
+      }
+      w.rpe=rpe; w.feedback=texto;
+      return true;
+    }
+    w.rpe=rpe; w.feedback=texto;
+    await saveState();
+    return true;
+  }
+  document.getElementById('list').addEventListener('focusout',async function(e){
+    if(!e.target.classList||!e.target.classList.contains('wc-fb-text')) return;
+    var card=e.target.closest('.wcard'); if(!card) return;
+    var id=card.getAttribute('data-id');
+    var w=state.workouts.filter(function(x){return x.id===id;})[0]; if(!w) return;
+    var texto=e.target.value;
+    if(texto===(w.feedback||'')) return;
+    await saveFeedback(id, w.rpe, texto);
   });
 
   document.getElementById('list').addEventListener('input',function(e){
