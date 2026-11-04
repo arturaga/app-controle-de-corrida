@@ -1694,8 +1694,15 @@
     var tg=head.querySelector('.week-toggle');
     if(tg) tg.innerHTML='<span>'+(aberta?'fechar':'ver treinos')+'</span> <i>▾</i>';
   }
+  // Cabecalho de semana minimizada que o clique/tecla deve alternar. Botoes e
+  // seletores dentro do cabecalho (Duplicar, microciclo) tem acao propria e
+  // nao podem abrir/fechar a semana.
+  function cabecaParaAlternar(e){
+    if(e.target.closest('button, select, a, input, label')) return null;
+    return e.target.closest('.weekgrp.min > .week-head');
+  }
   document.getElementById('list').addEventListener('click',async function(e){
-    var minHead=e.target.closest('.weekgrp.min > .week-head');
+    var minHead=cabecaParaAlternar(e);
     if(minHead){ toggleSemana(minHead); return; }
     var btn=e.target.closest('button'); if(!btn) return;
     if(btn.getAttribute('data-act')==='dup-week'){
@@ -1708,6 +1715,7 @@
         state.workouts.push({id:'w'+stamp+'_'+k+Math.floor(Math.random()*999),
           week:target, name:x.name, text:x.text, executed:false});
       });
+      semanasAbertas[target]=true; // a semana nova ja nasce aberta pra ver o resultado
       await saveState(); render();
       var grps=document.querySelectorAll('#list .weekgrp');
       if(grps.length) grps[grps.length-1].scrollIntoView({behavior:'smooth',block:'start'});
@@ -1752,7 +1760,7 @@
 
   document.getElementById('list').addEventListener('keydown',function(e){
     if(e.key!=='Enter' && e.key!==' ' && e.key!=='Spacebar') return;
-    var minHead=e.target.closest('.weekgrp.min > .week-head');
+    var minHead=cabecaParaAlternar(e);
     if(!minHead) return;
     e.preventDefault(); toggleSemana(minHead);
   });
