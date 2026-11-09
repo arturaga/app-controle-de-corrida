@@ -80,6 +80,10 @@
   .rc-foot{font-size:11.5px;color:var(--muted);font-weight:500;}
   .week-dup{border:1px solid var(--line-2);background:transparent;border-radius:20px;padding:3px 11px;font-size:12px;font-weight:700;color:var(--ink-2);white-space:nowrap;}
   .week-dup:hover{border-color:var(--orange);color:var(--orange);}
+  .week-destaque{border:1px solid var(--line-2);background:transparent;border-radius:20px;padding:3px 11px;font-size:12px;font-weight:700;color:var(--ink-2);white-space:nowrap;}
+  .week-destaque:hover{border-color:var(--orange);color:var(--orange);}
+  .week-destaque.on{background:var(--orange);border-color:var(--orange);color:var(--bg);cursor:default;}
+  .week-destaque.on:hover{color:var(--bg);}
   #loginGate{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;
     background:linear-gradient(rgba(9,9,9,.72),rgba(9,9,9,.88)), url('bg-login.jpg') center/cover no-repeat, var(--bg);}
   #loginForm{background:rgba(17,17,17,.86);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);border-color:var(--line-2);}
@@ -906,7 +910,7 @@
   }
 
   /* ---------------- Estado ---------------- */
-  var state={aluna:'',workouts:[],weekMeta:{},tipos:['Contínuo','Intervalado','Fartlek','Misto'],seeded:false};
+  var state={aluna:'',workouts:[],weekMeta:{},tipos:['Contínuo','Intervalado','Fartlek','Misto'],seeded:false,semanaDestaque:null};
   var roster={students:[],currentId:null};
   var TEXT_TEMPLATE='Aquecimento: \nPrincipal: \nVolta à Calma: ';
   var editingId=null;
@@ -916,12 +920,13 @@
   var chartMode='sem';
 
   function defaultTipos(){ return ['Contínuo','Intervalado','Fartlek','Misto']; }
-  function emptyStudentState(name){ return {aluna:name,workouts:[],weekMeta:{},tipos:defaultTipos(),defaultMode:'cam',seeded:false}; }
+  function emptyStudentState(name){ return {aluna:name,workouts:[],weekMeta:{},tipos:defaultTipos(),defaultMode:'cam',seeded:false,semanaDestaque:null}; }
   function normalizeState(s){
     if(!s.weekMeta) s.weekMeta={};
     if(!s.tipos||!s.tipos.length) s.tipos=defaultTipos();
     if(s.defaultMode!=='trote') s.defaultMode='cam';
     if(!('seeded' in s)) s.seeded=true;
+    if(typeof s.semanaDestaque!=='number') s.semanaDestaque=null;
     return s;
   }
 
@@ -1147,9 +1152,15 @@
      medalha pode sumir se o plano for editado -- aceito de proposito, pra
      nao precisar de escrita nova no banco. */
   function semanaFoco(){
+    var m=byWeek(), weeks=Object.keys(m).map(Number).sort(function(a,b){return a-b;});
+    // Escolha manual do treinador (★ Em destaque) tem prioridade sobre o
+    // calculo automatico -- so cai pro automatico se nunca foi escolhida ou
+    // se a semana escolhida nao existe mais (treinos apagados).
+    if(typeof state.semanaDestaque==='number' && weeks.indexOf(state.semanaDestaque)>-1){
+      return state.semanaDestaque;
+    }
     var sa=semanaAtual();
     if(sa!==null) return sa;
-    var m=byWeek(), weeks=Object.keys(m).map(Number).sort(function(a,b){return a-b;});
     if(!weeks.length) return null;
     /* Sem data utilizavel, o "hoje" sai do progresso: a semana em curso e a
        primeira pendente a partir da ultima em que ela treinou. Treino pulado
@@ -1425,20 +1436,21 @@
     var mesoPeak={};
     Object.keys(mesoGroups).forEach(function(mc){ mesoPeak[mc]=calcPeak(m,mesoGroups[mc]); });
 
-    var prevTotal=null, html='', lastMeso=null, semAtual=semanaAtual();
-    var lastSecao=null;
+    var prevTotal=null, semAtual=semanaAtual();
     var proximoId=null;
     if(isAluno){
       var foco=semanaFoco(), pend=(foco!==null?(m[foco]||[]):[]).filter(function(w){return !w.executed;});
       if(pend.length) proximoId=pend[0].id;
     }
+    // Passo 1: calcula cada semana em ordem ascendente de verdade (delta vs
+    // anterior, ACWR e pico do mesociclo dependem dessa ordem) e guarda o
+    // HTML de cada semana num fragmento isolado, por numero de semana. A
+    // ordem de EXIBICAO e os divisores (mesociclo / proximas-anteriores)
+    // sao decididos depois, no passo 2.
+    var fragsByWeek={};
     weeks.forEach(function(wk){
+      var cardHtml='';
       var mc=mesocicloOf(wk);
-      if(mc!==lastMeso){
-        var rg=mesocicloRange(mc);
-        if(!isAluno) html+='<div class="cycle-div">Mesociclo '+mc+' · semanas '+rg[0]+'–'+rg[1]+'</div>';
-        lastMeso=mc;
-      }
       var peak=mesoPeak[mc];
       var list=m[wk], c=0,t=0;
       list.forEach(function(w){var v=vol(w);c+=v.cam;t+=v.trote;});
@@ -1479,15 +1491,13 @@
         acwrHtml='<span class="acwr-badge '+az.cls+'" title="Carga aguda:crônica — volume desta semana ÷ média das últimas '+ACWR_WINDOW+' semanas (incluindo ela). Faixa segura 0,80–1,30; acima de 1,50, risco alto.">ACWR '+fmt2(acwrVal)+' · '+az.label+'</span>';
       }
 
+      var destacada = state.semanaDestaque===wk;
+      var destaqueHtml = isAluno ? '' : '<button type="button" class="week-destaque'+(destacada?' on':'')+'" data-act="set-destaque" data-week="'+wk+'" title="'+(destacada?'Esta é a semana em destaque no painel da aluna.':'Marcar esta semana como destaque no painel da aluna (substitui o destaque atual).')+'">'+(destacada?'★ Em destaque':'☆ Destacar p/ aluno')+'</button>';
+
       var dupHtml=isAluno?'':'<button type="button" class="week-dup" data-act="dup-week" data-week="'+wk+'" title="Copiar os treinos desta semana para a próxima semana livre, como não executados">Duplicar</button>';
 
       var ehAtual = (wk===semAtual);
       var secao = isAluno ? (secaoDe[wk]||'foco') : null;
-      if(isAluno && secao!==lastSecao){
-        if(secao==='prox') html+='<div class="cycle-div">Próximas semanas</div>';
-        else if(secao==='ant') html+='<div class="cycle-div">Semanas anteriores</div>';
-        lastSecao=secao;
-      }
       // Aluno: so a semana fora do foco minimiza. Treinador: todas minimizam
       // por padrao agora -- antes vinha tudo expandido e era rolar o plano
       // inteiro pra achar uma semana. Os dois abrem clicando na linha.
@@ -1498,8 +1508,8 @@
         var tudoFeito=feitosW===list.length;
         var progHtml='<span class="week-prog'+(tudoFeito?' full':'')+'">'+(tudoFeito?'✓ ':'')+feitosW+'/'+list.length+' treino'+(list.length>1?'s':'')+'</span>';
         var corpoMin = isAluno ? progHtml
-          : (deltaHtml+'<span class="week-split">caminhada '+fmt(Math.round(c*10)/10)+' · trote '+fmt(Math.round(t*10)/10)+' min · '+list.length+' treino'+(list.length>1?'s':'')+'</span>'+selectHtml+badgeHtml+acwrHtml+dupHtml);
-        html+='<div class="card weekgrp min'+(aberta?' aberta':'')+(!isAluno&&ehAtual?' atual':'')+'" data-week="'+wk+'">'
+          : (deltaHtml+'<span class="week-split">caminhada '+fmt(Math.round(c*10)/10)+' · trote '+fmt(Math.round(t*10)/10)+' min · '+list.length+' treino'+(list.length>1?'s':'')+'</span>'+selectHtml+badgeHtml+acwrHtml+destaqueHtml+dupHtml);
+        cardHtml+='<div class="card weekgrp min'+(aberta?' aberta':'')+(!isAluno&&ehAtual?' atual':'')+'" data-week="'+wk+'">'
             +'<div class="week-head" role="button" tabindex="0" aria-expanded="'+(aberta?'true':'false')+'">'
             +'<h3>Semana '+wk+'</h3>'
             +(ehAtual?'<span class="week-agora">esta semana</span>':'')
@@ -1508,22 +1518,22 @@
             +'<span class="week-toggle"><span>'+(aberta?'fechar':'ver treinos')+'</span> <i>▾</i></span>'
             +'</div><div class="wgrid">';
       } else {
-        html+='<div class="card weekgrp'+(ehAtual?' atual':'')+'" data-week="'+wk+'"><div class="week-head"><h3>Semana '+wk+'</h3>'
+        cardHtml+='<div class="card weekgrp'+(ehAtual?' atual':'')+'" data-week="'+wk+'"><div class="week-head"><h3>Semana '+wk+'</h3>'
           +(ehAtual?'<span class="week-agora">esta semana</span>':'')
           +'<span class="week-total">'+fmt(tot)+'<small>min</small></span>'
           +(isAluno?'':deltaHtml)
           +'<span class="week-split">caminhada '+fmt(Math.round(c*10)/10)+' · trote '+fmt(Math.round(t*10)/10)+' min · '+list.length+' treino'+(list.length>1?'s':'')+'</span>'
-          +(isAluno?'':selectHtml+badgeHtml+acwrHtml)+dupHtml
+          +(isAluno?'':selectHtml+badgeHtml+acwrHtml+destaqueHtml)+dupHtml
           +'</div><div class="wgrid">';
       }
       var wIdx=0;
       list.forEach(function(w){
         wIdx++;
-        if(w.id===inlineEditId){ html+=editCardHtml(w,wIdx); return; }
+        if(w.id===inlineEditId){ cardHtml+=editCardHtml(w,wIdx); return; }
         var v=vol(w); var pc=v.total?Math.round(v.cam/v.total*100):0;
         var ehProximo=(w.id===proximoId);
         var fbPendente=!isAluno&&w.executed&&!(w.feedback&&w.feedback.trim());
-        html+='<div class="wcard'+(ehProximo?' proximo':'')+(isAluno&&w.executed?' feito':'')+'" data-id="'+w.id+'">'
+        cardHtml+='<div class="wcard'+(ehProximo?' proximo':'')+(isAluno&&w.executed?' feito':'')+'" data-id="'+w.id+'">'
           +(ehProximo?'<div class="wc-proximo">Seu próximo treino</div>':'')
           +'<div class="wcard-top"><div class="wc-title">Treino '+wIdx+(w.name?'<span class="wc-type">'+esc(w.name)+'</span>':'')+'</div>'
           +'<label class="wc-check'+(w.executed?' done':'')+'"><input type="checkbox" class="exec-check" data-id="'+w.id+'"'+(w.executed?' checked':'')+'><span>'+(w.executed?'Executado':'Marcar executado')+'</span></label></div>'
@@ -1545,8 +1555,37 @@
           +(isAluno?'':'<div class="wc-actions"><button data-act="edit">Editar</button><button class="del" data-act="del">Excluir</button></div>')
           +'</div>';
       });
-      html+='</div></div>';
+      cardHtml+='</div></div>';
+      fragsByWeek[wk]=cardHtml;
     });
+
+    // Passo 2: monta o HTML final na ordem de EXIBICAO. Aluno mantem a
+    // ordem de foco de sempre; treinador ve a semana mais recente primeiro,
+    // com o divisor de mesociclo seguindo essa mesma ordem invertida.
+    var html='';
+    if(isAluno){
+      var lastSecao=null;
+      weeks.forEach(function(wk){
+        var secao=secaoDe[wk]||'foco';
+        if(secao!==lastSecao){
+          if(secao==='prox') html+='<div class="cycle-div">Próximas semanas</div>';
+          else if(secao==='ant') html+='<div class="cycle-div">Semanas anteriores</div>';
+          lastSecao=secao;
+        }
+        html+=fragsByWeek[wk];
+      });
+    } else {
+      var lastMeso=null;
+      weeks.slice().reverse().forEach(function(wk){
+        var mc=mesocicloOf(wk);
+        if(mc!==lastMeso){
+          var rg=mesocicloRange(mc);
+          html+='<div class="cycle-div">Mesociclo '+mc+' · semanas '+rg[0]+'–'+rg[1]+'</div>';
+          lastMeso=mc;
+        }
+        html+=fragsByWeek[wk];
+      });
+    }
     host.innerHTML=html;
   }
   function esc(s){return (s+'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -1694,8 +1733,15 @@
     var tg=head.querySelector('.week-toggle');
     if(tg) tg.innerHTML='<span>'+(aberta?'fechar':'ver treinos')+'</span> <i>▾</i>';
   }
+  // Cabecalho de semana minimizada que o clique/tecla deve alternar. Botoes e
+  // seletores dentro do cabecalho (Duplicar, microciclo) tem acao propria e
+  // nao podem abrir/fechar a semana.
+  function cabecaParaAlternar(e){
+    if(e.target.closest('button, select, a, input, label')) return null;
+    return e.target.closest('.weekgrp.min > .week-head');
+  }
   document.getElementById('list').addEventListener('click',async function(e){
-    var minHead=e.target.closest('.weekgrp.min > .week-head');
+    var minHead=cabecaParaAlternar(e);
     if(minHead){ toggleSemana(minHead); return; }
     var btn=e.target.closest('button'); if(!btn) return;
     if(btn.getAttribute('data-act')==='dup-week'){
@@ -1708,9 +1754,15 @@
         state.workouts.push({id:'w'+stamp+'_'+k+Math.floor(Math.random()*999),
           week:target, name:x.name, text:x.text, executed:false});
       });
+      semanasAbertas[target]=true; // a semana nova ja nasce aberta pra ver o resultado
       await saveState(); render();
-      var grps=document.querySelectorAll('#list .weekgrp');
-      if(grps.length) grps[grps.length-1].scrollIntoView({behavior:'smooth',block:'start'});
+      var novoGrp=document.querySelector('#list .weekgrp[data-week="'+target+'"]');
+      if(novoGrp) novoGrp.scrollIntoView({behavior:'smooth',block:'start'});
+      return;
+    }
+    if(btn.getAttribute('data-act')==='set-destaque'){
+      var nw=parseInt(btn.getAttribute('data-week'),10);
+      if(state.semanaDestaque!==nw){ state.semanaDestaque=nw; await saveState(); render(); }
       return;
     }
     var card=e.target.closest('.wcard'); if(!card) return;
@@ -1752,7 +1804,7 @@
 
   document.getElementById('list').addEventListener('keydown',function(e){
     if(e.key!=='Enter' && e.key!==' ' && e.key!=='Spacebar') return;
-    var minHead=e.target.closest('.weekgrp.min > .week-head');
+    var minHead=cabecaParaAlternar(e);
     if(!minHead) return;
     e.preventDefault(); toggleSemana(minHead);
   });
@@ -1964,7 +2016,8 @@
       return;
     }
     state=normalizeState({aluna:plano.aluna||'', defaultMode:plano.defaultMode||'cam',
-                          workouts:plano.workouts||[], weekMeta:{}, tipos:[]});
+                          workouts:plano.workouts||[], weekMeta:{}, tipos:[],
+                          semanaDestaque:(typeof plano.semanaDestaque==='number'?plano.semanaDestaque:null)});
     var sub=document.querySelector('.brand .sub');
     if(sub) sub.textContent=(plano.aluna?plano.aluna+' · ':'')+'seus treinos';
     var note=document.getElementById('storeNote');
