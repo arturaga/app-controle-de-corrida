@@ -322,6 +322,40 @@
     .aluna{align-items:stretch;} .aluna-row{flex-wrap:wrap;} .aluna-row select{min-width:0;flex:1;}
     .form-card{position:static;max-height:none;}
   }
+  /* Zonas de treinamento */
+  .zonas-card .card-head{cursor:pointer;user-select:none;}
+  .zonas-card.collapsed{padding:12px 18px;}
+  .zonas-card.collapsed .card-head{margin-bottom:0;}
+  .zonas-card.collapsed #zonasBody{display:none;}
+  .zt-wrap{overflow-x:auto;margin:0 -4px 6px;}
+  .zt{width:100%;border-collapse:collapse;font-size:14px;min-width:460px;}
+  .zt th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line-2);}
+  .zt td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top;}
+  .zt td.zn{font-family:var(--disp);font-size:20px;color:var(--orange);width:38px;}
+  .zt td b{font-weight:700;}
+  .zt .zu{display:block;font-size:12px;color:var(--muted);}
+  .zt .num{white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .zt-fontes{font-size:12px;color:var(--muted);margin:4px 0 14px;line-height:1.6;}
+  .zt-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;}
+  .zt-sec{font-family:var(--disp-cond);font-size:14px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-2);margin:16px 0 8px;}
+  .zt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;}
+  .zt-grid .field input,.zt-grid .field select{width:100%;}
+  .field input[type=date]{width:100%;border:1px solid var(--line-2);background:var(--card);border-radius:var(--r-sm);padding:8px 10px;font-family:var(--sans);font-size:15px;color:var(--ink);}
+  .zt-testes{list-style:none;margin:0;padding:0;}
+  .zt-testes li{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;}
+  .zt-testes li small{display:block;color:var(--muted);font-size:12px;}
+  .zt-del{background:transparent;border:1px solid var(--line-2);color:var(--muted);border-radius:var(--r-xs);padding:4px 9px;font-size:12px;}
+  .zt-del:hover{border-color:var(--danger);color:var(--danger);}
+  .zt-msg{font-size:13px;color:var(--warn);margin-top:8px;}
+  .zt-vazio{font-size:14px;color:var(--ink-2);margin:0 0 6px;}
+  body.aluno .zonas-card .form-toggle{display:none;}
+  @media (max-width:560px){
+    .zt{min-width:0;font-size:13px;}
+    .zt th,.zt td{padding:7px 4px;}
+    .zt td.zn{font-size:17px;width:26px;}
+    .zt .zp{display:none;}
+    .zt .zu{font-size:11.5px;}
+  }
 </style>
 </head>
 <body>
@@ -378,6 +412,16 @@
   <section class="roster" id="roster" aria-label="Alunos"></section>
 
   <section class="kpis" id="kpis" aria-label="Resumo"></section>
+  <section class="card zonas-card collapsed" id="zonasCard" hidden>
+    <div class="card-head" id="zonasHead">
+      <div>
+        <h2>Zonas de treinamento</h2>
+        <div class="hint" id="zonasHint">Preencha os dados e os testes da aluna</div>
+      </div>
+      <button type="button" class="form-toggle" id="zonasToggle" aria-expanded="false" title="Abrir/fechar">+</button>
+    </div>
+    <div id="zonasBody"></div>
+  </section>
 
   <section class="card" id="chartCard">
     <div class="card-head">
@@ -482,6 +526,10 @@
   /* Ritmos padrão (min/km) quando o texto não traz pace: servem pra converter
      km em minutos e minutos em km (estimado). */
   var PACE_TROTE=6.5, PACE_CAM=12;
+  // Pace de trote em uso no calculo: o leve (Z2) da aluna quando ela tem
+  // zonas calculadas; senao o padrao. paceCtx troca a aluna da vez (painel geral).
+  var paceBase=PACE_TROTE, paceCtx=null;
+  function paceTroteDe(st){ return (st&&st.zonas&&st.zonas.paceLeve)||PACE_TROTE; }
   var PACE_TOKEN='(?:(?:pace|ritmo)\\s*:?\\s*)?~?(\\d{1,2}):(\\d{2})';
   // Padroniza grafias: 6'30" -> 6:30, 30' -> 30 min, 1h30 -> 90 min, × -> x ...
   function normaliza(text){
@@ -526,7 +574,7 @@
       var tipo=classify(m0,mode), pace;
       if(pm) pace=(+pm)+(+ps)/60;
       else if(dur) pace=parseTime(dur)/d;
-      else pace=tipo==='trote' ? (gp||PACE_TROTE) : PACE_CAM;
+      else pace=tipo==='trote' ? (gp||paceBase) : PACE_CAM;
       var mins=reps*d*pace;
       if(tipo==='trote') trote+=mins; else cam+=mins;
       km+=reps*d;
@@ -540,8 +588,9 @@
     var r=sumDurations(t,mode); cam+=r.cam; trote+=r.trote; mc+=r.cam; mt+=r.trote;
     return {cam:cam,trote:trote,km:km,mc:mc,mt:mt};
   }
-  function parseWorkout(text,mode){
+  function parseWorkout(text,mode,pace){
     if(!text||!text.trim()) return {cam:0,trote:0,km:0,kmEst:false};
+    paceBase = pace || paceCtx || paceTroteDe(state);
     mode = mode==='trote' ? 'trote' : 'cam';
     var t=normaliza(text);
     // "Total: 5k (5:30)" resume o Principal: descarta o detalhamento pra não contar em dobro
@@ -552,7 +601,7 @@
     var gp=gm ? (+gm[1])+(+gm[2])/60 : 0;
     var r=calcTrecho(t,mode,gp);
     // minutos escritos viram km estimado pelo ritmo (do treino ou padrão)
-    var kmMin=r.mc/PACE_CAM + r.mt/(gp||PACE_TROTE);
+    var kmMin=r.mc/PACE_CAM + r.mt/(gp||paceBase);
     return {cam:Math.round(r.cam*10)/10, trote:Math.round(r.trote*10)/10,
             km:Math.round((r.km+kmMin)*100)/100, kmEst:(r.mc+r.mt)>0};
   }
@@ -909,6 +958,98 @@
     return acwrFor(m,weeks[weeks.length-1],weeks[0]);
   }
 
+  /* ---------------- Zonas de treinamento ----------------
+     Pace: VDOT de Daniels (prova/Cooper) ou pace de limiar de Friel.
+     FC: FC de limiar (Friel), Karvonen (FC max + repouso) ou % da FC max
+     (medida ou estimada por Tanaka, 208 - 0,7 x idade). Calcula-se tudo no
+     painel do treinador e guarda-se um resumo em state.zonas, que e o que o
+     link da aluna recebe (sem peso nem idade). */
+  var ZONAS_INFO=[
+    {z:'Z1',nome:'Recuperação',pse:'1–2',uso:'Regenerativo, aquecimento'},
+    {z:'Z2',nome:'Aeróbio leve',pse:'3–4',uso:'Rodagem, longão'},
+    {z:'Z3',nome:'Moderado',pse:'5–6',uso:'Ritmo de maratona, progressivo'},
+    {z:'Z4',nome:'Limiar',pse:'7–8',uso:'Tempo run, cruise intervals'},
+    {z:'Z5',nome:'VO2máx / velocidade',pse:'9–10',uso:'Intervalados, tiros'}
+  ];
+  var TESTE_TIPOS={prova:'Prova / contrarrelógio', cooper:'Cooper 12 min', limiar:'Limiar 30 min (Friel)', rockport:'Rockport 1,6 km caminhando'};
+  function lerTempo(s){ // "25:30" -> 25,5 min · "1:52:10" -> 112,2 min · "30" -> 30
+    s=(s||'').toString().trim().replace(',','.'); if(!s) return 0;
+    var p=s.split(':').map(function(x){return parseFloat(x)||0;});
+    if(p.length===3) return p[0]*60+p[1]+p[2]/60;
+    if(p.length===2) return p[0]+p[1]/60;
+    return p[0];
+  }
+  function fmtTempo(min){
+    var s=Math.round(min*60), h=Math.floor(s/3600), m=Math.floor(s%3600/60), ss=s%60;
+    return (h?h+':'+(m<10?'0':''):'')+m+':'+(ss<10?'0':'')+ss;
+  }
+  function fmtPace(p){ return fmtTempo(p); }
+  // Daniels & Gilbert: VO2 do ritmo e fracao do VO2max sustentavel por t minutos.
+  function vo2DaVel(v){ return -4.60+0.182258*v+0.000104*v*v; }
+  function fracDoTempo(t){ return 0.8+0.1894393*Math.exp(-0.012778*t)+0.2989558*Math.exp(-0.1932605*t); }
+  function vdotDe(distM,tMin){ if(!(distM>0&&tMin>0)) return null; return vo2DaVel(distM/tMin)/fracDoTempo(tMin); }
+  function paceNoVo2(vo2){ var a=0.000104,b=0.182258,c=-4.60-vo2; var v=(-b+Math.sqrt(b*b-4*a*c))/(2*a); return 1000/v; }
+  function paceZonasVdot(vd){
+    function p(f){ return paceNoVo2(vd*f); }
+    return [[null,p(0.62)],[p(0.62),p(0.74)],[p(0.75),p(0.84)],[p(0.84),p(0.88)],[p(0.95),p(0.975)-0.25]];
+  }
+  function paceZonasLimiar(tp){
+    return [[null,tp*1.29],[tp*1.29,tp*1.14],[tp*1.13,tp*1.06],[tp*1.05,tp],[tp*0.99,tp*0.90]];
+  }
+  function fcZonasPct(base,rep,pcts){
+    return pcts.map(function(r){ return [Math.round(rep+(base-rep)*r[0]), Math.round(rep+(base-rep)*r[1])]; });
+  }
+  var PCT_FC=[[0.50,0.60],[0.60,0.70],[0.70,0.80],[0.80,0.90],[0.90,1.00]];
+  function fcZonasLthr(l){
+    return [[null,Math.round(l*0.84)],[Math.round(l*0.85),Math.round(l*0.89)],[Math.round(l*0.90),Math.round(l*0.94)],
+            [Math.round(l*0.95),Math.round(l*0.99)],[Math.round(l*1.00),Math.round(l*1.06)]];
+  }
+  function rockportVo2(perfil,tMin,fc){
+    if(!(perfil&&perfil.idade&&perfil.peso&&perfil.sexo&&tMin&&fc)) return null;
+    return 132.853-0.0769*(perfil.peso*2.20462)-0.3877*perfil.idade+6.315*(perfil.sexo==='M'?1:0)-3.2649*tMin-0.1565*fc;
+  }
+  function resultadoTeste(t,perfil){
+    if(t.tipo==='prova'){ var v=vdotDe(t.dist,lerTempo(t.tempo)); return v?{vdot:v}:null; }
+    if(t.tipo==='cooper'){ var v2=vdotDe(t.dist,12); return v2?{vdot:v2, vo2:(t.dist-504.9)/44.73}:null; }
+    if(t.tipo==='limiar'){ var tp=lerTempo(t.pace), l=+t.fc||0; return (tp||l)?{tp:tp||null, lthr:l||null}:null; }
+    if(t.tipo==='rockport'){ var r=rockportVo2(perfil,lerTempo(t.tempo),+t.fc); return r?{vo2:r}:null; }
+    return null;
+  }
+  function calcZonas(perfil,testes){
+    perfil=perfil||{}; testes=(testes||[]).slice().sort(function(a,b){ return (b.data||'').localeCompare(a.data||''); });
+    var out={rows:null,fcFonte:'',paceFonte:'',vdot:null,vo2:null,lthr:null,fcMax:null,paceLeve:null};
+    var fc=null, pace=null;
+    testes.forEach(function(t){
+      var r=resultadoTeste(t,perfil); if(!r) return;
+      var quando=t.data?(' de '+t.data.split('-').reverse().join('/')):'';
+      if(!pace && r.vdot){ pace=paceZonasVdot(r.vdot); out.vdot=r.vdot;
+        out.paceFonte=(t.tipo==='cooper'?'Cooper ('+t.dist+' m)':'prova de '+fmt(t.dist/1000)+' km em '+t.tempo)+quando+' · VDOT '+fmt(r.vdot)+' (Daniels)'; }
+      if(!pace && r.tp){ pace=paceZonasLimiar(r.tp);
+        out.paceFonte='limiar de 30 min'+quando+' · pace de limiar '+fmtPace(r.tp)+'/km (Friel)'; }
+      if(!fc && r.lthr){ fc=fcZonasLthr(r.lthr); out.lthr=r.lthr;
+        out.fcFonte='limiar de 30 min'+quando+' · FC de limiar '+r.lthr+' bpm (Friel)'; }
+      if(out.vo2===null && r.vo2) out.vo2=r.vo2;
+    });
+    var fcMax=+perfil.fcMax||0, est=false;
+    if(!fcMax && +perfil.idade){ fcMax=Math.round(208-0.7*perfil.idade); est=true; }
+    if(fcMax) out.fcMax=fcMax;
+    if(!fc && fcMax){
+      var rep=+perfil.fcRep||0;
+      if(rep && rep<fcMax){ fc=fcZonasPct(fcMax,rep,PCT_FC); out.fcFonte='Karvonen · FC máx '+fcMax+(est?' (estimada pela idade)':'')+', repouso '+rep+' bpm'; }
+      else { fc=fcZonasPct(fcMax,0,PCT_FC); out.fcFonte='% da FC máx '+fcMax+' bpm'+(est?' (estimada pela idade)':''); }
+    }
+    if(out.vo2===null && out.vdot) out.vo2=out.vdot;
+    if(!fc && !pace) return out;
+    // faixas de FC continuas: cada zona comeca 1 bpm acima do fim da anterior
+    if(fc) for(var i=1;i<fc.length;i++){ fc[i]=[fc[i-1][1]+1, Math.max(fc[i][1], fc[i-1][1]+1)]; }
+    out.rows=ZONAS_INFO.map(function(info,i){
+      return {z:info.z, nome:info.nome, pse:info.pse, uso:info.uso, fc:fc?fc[i]:null,
+              pace:pace?pace[i].map(function(x){return x===null?null:Math.round(x*100)/100;}):null};
+    });
+    if(pace) out.paceLeve=Math.round((pace[1][0]+pace[1][1])/2*100)/100;
+    return out;
+  }
+
   /* ---------------- Estado ---------------- */
   var state={aluna:'',workouts:[],weekMeta:{},tipos:['Contínuo','Intervalado','Fartlek','Misto'],seeded:false,semanaDestaque:null};
   var roster={students:[],currentId:null};
@@ -920,13 +1061,16 @@
   var chartMode='sem';
 
   function defaultTipos(){ return ['Contínuo','Intervalado','Fartlek','Misto']; }
-  function emptyStudentState(name){ return {aluna:name,workouts:[],weekMeta:{},tipos:defaultTipos(),defaultMode:'cam',seeded:false,semanaDestaque:null}; }
+  function emptyStudentState(name){ return {aluna:name,workouts:[],weekMeta:{},tipos:defaultTipos(),defaultMode:'cam',seeded:false,semanaDestaque:null,perfil:{},testes:[],zonas:null}; }
   function normalizeState(s){
     if(!s.weekMeta) s.weekMeta={};
     if(!s.tipos||!s.tipos.length) s.tipos=defaultTipos();
     if(s.defaultMode!=='trote') s.defaultMode='cam';
     if(!('seeded' in s)) s.seeded=true;
     if(typeof s.semanaDestaque!=='number') s.semanaDestaque=null;
+    if(!s.perfil||typeof s.perfil!=='object') s.perfil={};
+    if(!Array.isArray(s.testes)) s.testes=[];
+    if(!s.zonas||typeof s.zonas!=='object') s.zonas=null;
     return s;
   }
 
@@ -1072,6 +1216,10 @@
   // Cada aluno tem seu proprio defaultMode (caminhada x ritmo/Km), entao o
   // resumo precisa calcular com o modo dele, nao com o do aluno na tela.
   function studentSummary(st){
+    var prev=paceCtx; paceCtx=paceTroteDe(st);
+    try{ return resumoAluno(st); } finally{ paceCtx=prev; }
+  }
+  function resumoAluno(st){
     var mode = st.defaultMode==='trote' ? 'trote' : 'cam';
     var map=weeksMapOf(st), weeks=Object.keys(map).map(Number).sort(function(a,b){return a-b;});
     var all=st.workouts||[];
@@ -1659,10 +1807,10 @@
 
   /* ---------------- Render tudo ---------------- */
   function render(){
-    if(isAluno){ renderKPIs(); renderList(); return; }
+    if(isAluno){ renderKPIs(); renderZonas(); renderList(); return; }
     document.getElementById('modeSelect').value = state.defaultMode==='trote' ? 'trote' : 'cam';
     rosterStates[roster.currentId]=state;
-    renderKPIs(); renderChart(); renderList(); renderRoster(); renderNotif();
+    renderKPIs(); renderZonas(); renderChart(); renderList(); renderRoster(); renderNotif();
   }
 
   /* ---------------- Prévia ao vivo ---------------- */
@@ -1956,6 +2104,168 @@
   });
   document.getElementById('undoBtn').addEventListener('click',desfazer);
 
+  /* ---------------- Zonas: cartao (treinador edita, aluna so ve) ---------------- */
+  var DIST_PROVA=[[1600,'1600 m'],[3000,'3 km'],[5000,'5 km'],[10000,'10 km'],[21097,'21,1 km'],[42195,'42,2 km']];
+  function hojeISO(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  function dataBr(s){ return dataValida(s)?s.split('-').reverse().join('/'):''; }
+  function faixaFc(r){ if(!r) return '—'; return r[0]===null?('até '+r[1]):(r[0]+'–'+r[1]); }
+  function faixaPace(r){ if(!r) return '—'; return r[0]===null?('acima de '+fmtPace(r[1])):(fmtPace(r[0])+'–'+fmtPace(r[1])); }
+  function tabelaZonasHtml(Z){
+    var temFc=Z.rows.some(function(r){return r.fc;}), temPace=Z.rows.some(function(r){return r.pace;});
+    return '<div class="zt-wrap"><table class="zt"><thead><tr><th>Zona</th><th>Para quê</th>'
+      +(temFc?'<th>FC (bpm)</th>':'')+(temPace?'<th>Pace (min/km)</th>':'')+'<th class="zp">PSE</th></tr></thead><tbody>'
+      +Z.rows.map(function(r){
+        return '<tr><td class="zn">'+r.z+'</td><td><b>'+esc(r.nome)+'</b><span class="zu">'+esc(r.uso)+'</span></td>'
+          +(temFc?'<td class="num">'+faixaFc(r.fc)+'</td>':'')
+          +(temPace?'<td class="num">'+faixaPace(r.pace)+'</td>':'')
+          +'<td class="num zp">'+r.pse+'</td></tr>';
+      }).join('')+'</tbody></table></div>'
+      +'<div class="zt-fontes">'
+      +(Z.fcFonte?'FC: '+esc(Z.fcFonte)+'<br>':'')
+      +(Z.paceFonte?'Pace: '+esc(Z.paceFonte):'')
+      +'</div>';
+  }
+  function chipsZonasHtml(Z){
+    var c=[];
+    if(Z.vdot) c.push('VDOT '+fmt(Z.vdot));
+    if(Z.vo2) c.push('VO2máx ≈ '+fmt(Z.vo2));
+    if(Z.lthr) c.push('FC limiar '+Z.lthr);
+    if(Z.fcMax) c.push('FC máx '+Z.fcMax);
+    if(Z.paceLeve) c.push('Leve ≈ '+fmtPace(Z.paceLeve)+'/km');
+    return c.length?'<div class="zt-chips">'+c.map(function(x){return '<span class="chip">'+x+'</span>';}).join('')+'</div>':'';
+  }
+  function resumoTeste(t){
+    if(t.tipo==='prova') return fmt(t.dist/1000)+' km em '+esc(t.tempo);
+    if(t.tipo==='cooper') return t.dist+' m em 12 min';
+    if(t.tipo==='limiar') return [t.pace?esc(t.pace)+'/km':'', t.fc?t.fc+' bpm':''].filter(Boolean).join(' · ');
+    if(t.tipo==='rockport') return esc(t.tempo)+' · FC '+t.fc+' bpm';
+    return '';
+  }
+  function resultadoTxt(t){
+    var r=resultadoTeste(t,state.perfil); if(!r) return 'faltam dados';
+    var o=[]; if(r.vdot) o.push('VDOT '+fmt(r.vdot)); if(r.vo2) o.push('VO2 ≈ '+fmt(r.vo2));
+    if(r.tp) o.push('limiar '+fmtPace(r.tp)+'/km'); if(r.lthr) o.push('FC limiar '+r.lthr);
+    return o.join(' · ');
+  }
+  function camposTesteHtml(tipo){
+    if(tipo==='prova') return '<div class="field"><label for="ztDist">Distância</label><select id="ztDist">'
+        +DIST_PROVA.map(function(d){return '<option value="'+d[0]+'"'+(d[0]===5000?' selected':'')+'>'+d[1]+'</option>';}).join('')
+        +'<option value="outra">Outra…</option></select></div>'
+      +'<div class="field" id="ztOutraWrap" hidden><label for="ztOutra">Distância (km)</label><input id="ztOutra" type="number" min="0.4" step="0.1"></div>'
+      +'<div class="field"><label for="ztTempo">Tempo</label><input id="ztTempo" type="text" inputmode="numeric" placeholder="25:30 ou 1:52:10"></div>';
+    if(tipo==='cooper') return '<div class="field"><label for="ztDistM">Distância em 12 min (m)</label><input id="ztDistM" type="number" min="500" step="10" placeholder="2400"></div>';
+    if(tipo==='limiar') return '<div class="field"><label for="ztPace">Pace médio dos últimos 20 min</label><input id="ztPace" type="text" inputmode="numeric" placeholder="5:30"></div>'
+      +'<div class="field"><label for="ztFc">FC média dos últimos 20 min</label><input id="ztFc" type="number" min="80" max="220" placeholder="168"></div>';
+    if(tipo==='rockport') return '<div class="field"><label for="ztTempo">Tempo dos 1,6 km</label><input id="ztTempo" type="text" inputmode="numeric" placeholder="15:30"></div>'
+      +'<div class="field"><label for="ztFc">FC ao terminar</label><input id="ztFc" type="number" min="60" max="220" placeholder="140"></div>';
+    return '';
+  }
+  function perfilHtml(){
+    var p=state.perfil||{};
+    function num(k,lab,ph,min,max){ return '<div class="field"><label for="zp_'+k+'">'+lab+'</label><input id="zp_'+k+'" data-perfil="'+k+'" type="number" min="'+min+'" max="'+max+'" placeholder="'+ph+'" value="'+(p[k]!=null&&p[k]!==''?esc(p[k]):'')+'"></div>'; }
+    return '<div class="zt-grid">'
+      +num('idade','Idade','35',10,100)
+      +'<div class="field"><label for="zp_sexo">Sexo</label><select id="zp_sexo" data-perfil="sexo"><option value="">—</option>'
+      +'<option value="F"'+(p.sexo==='F'?' selected':'')+'>Feminino</option><option value="M"'+(p.sexo==='M'?' selected':'')+'>Masculino</option></select></div>'
+      +num('peso','Peso (kg)','62',30,200)
+      +num('fcRep','FC repouso','60',30,120)
+      +num('fcMax','FC máx medida','opcional',120,230)
+      +'</div>';
+  }
+  function renderZonas(){
+    var card=document.getElementById('zonasCard'), body=document.getElementById('zonasBody'), hint=document.getElementById('zonasHint');
+    var Z=state.zonas;
+    if(isAluno){
+      if(!Z||!Z.rows){ card.hidden=true; return; }
+      card.hidden=false; card.classList.remove('collapsed');
+      hint.textContent='Use a tabela para acertar a intensidade de cada treino';
+      body.innerHTML=chipsZonasHtml(Z)+tabelaZonasHtml(Z);
+      return;
+    }
+    card.hidden=false;
+    hint.textContent = (Z&&Z.rows) ? [Z.vdot?'VDOT '+fmt(Z.vdot):'', Z.lthr?'FC limiar '+Z.lthr:'', Z.paceLeve?'leve '+fmtPace(Z.paceLeve)+'/km':'', (!Z.lthr&&Z.fcMax)?'FC máx '+Z.fcMax:''].filter(Boolean).join(' · ')
+                                   : 'Preencha os dados e os testes da aluna';
+    var testes=state.testes.slice().sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
+    var tipoSel=(document.getElementById('ztTipo')||{}).value||'prova';
+    body.innerHTML=
+      ((Z&&Z.rows) ? chipsZonasHtml(Z)+tabelaZonasHtml(Z)
+                   : '<p class="zt-vazio">Ainda sem zonas. Informe a idade (zonas de FC estimadas) ou registre um teste.</p>')
+      +'<div class="zt-sec">Dados da aluna</div>'+perfilHtml()
+      +'<div class="zt-sec">Registrar teste</div>'
+      +'<div class="zt-grid">'
+      +'<div class="field"><label for="ztTipo">Teste</label><select id="ztTipo">'
+      +Object.keys(TESTE_TIPOS).map(function(k){return '<option value="'+k+'"'+(k===tipoSel?' selected':'')+'>'+TESTE_TIPOS[k]+'</option>';}).join('')
+      +'</select></div>'
+      +'<div class="field"><label for="ztData">Data</label><input id="ztData" type="date" value="'+hojeISO()+'"></div>'
+      +'<div id="ztCampos" style="display:contents">'+camposTesteHtml(tipoSel)+'</div>'
+      +'</div>'
+      +'<div class="btns" style="margin-top:10px"><button type="button" class="btn btn-primary" id="ztSalvar">Salvar teste</button></div>'
+      +'<div class="zt-msg" id="ztMsg" hidden></div>'
+      +(testes.length?'<div class="zt-sec">Testes registrados</div><ul class="zt-testes">'
+        +testes.map(function(t){
+          return '<li><div>'+dataBr(t.data)+' · <b>'+esc(TESTE_TIPOS[t.tipo]||t.tipo)+'</b> · '+resumoTeste(t)
+            +'<small>'+resultadoTxt(t)+'</small></div>'
+            +'<button type="button" class="zt-del" data-del-teste="'+esc(t.id)+'">Excluir</button></li>';
+        }).join('')+'</ul>':'');
+  }
+  async function salvarZonas(){
+    state.zonas=calcZonas(state.perfil,state.testes);
+    await saveState(); render();
+  }
+  function ztMsg(t){ var m=document.getElementById('ztMsg'); if(m){ m.textContent=t; m.hidden=!t; } }
+  function lerTesteDoForm(){
+    var tipo=document.getElementById('ztTipo').value, data=document.getElementById('ztData').value||hojeISO();
+    var t={id:'t'+Date.now()+Math.floor(Math.random()*999), tipo:tipo, data:data};
+    function val(id){ var e=document.getElementById(id); return e?e.value.trim():''; }
+    if(tipo==='prova'){
+      var d=val('ztDist'); t.dist = d==='outra' ? Math.round(parseFloat(val('ztOutra').replace(',','.'))*1000) : +d;
+      t.tempo=val('ztTempo');
+      if(!(t.dist>=400) || !(lerTempo(t.tempo)>0)) return 'Informe a distância e o tempo (ex.: 25:30).';
+    } else if(tipo==='cooper'){
+      t.dist=+val('ztDistM'); if(!(t.dist>=500)) return 'Informe a distância percorrida em metros.';
+    } else if(tipo==='limiar'){
+      t.pace=val('ztPace'); t.fc=+val('ztFc')||null;
+      if(!lerTempo(t.pace) && !t.fc) return 'Informe o pace e/ou a FC média dos últimos 20 min.';
+      if(!lerTempo(t.pace)) t.pace='';
+    } else if(tipo==='rockport'){
+      t.tempo=val('ztTempo'); t.fc=+val('ztFc');
+      if(!(lerTempo(t.tempo)>0) || !t.fc) return 'Informe o tempo e a FC ao terminar.';
+      var p=state.perfil||{};
+      if(!(p.idade&&p.peso&&p.sexo)) return 'O Rockport precisa de idade, peso e sexo em "Dados da aluna".';
+    }
+    return t;
+  }
+  document.getElementById('zonasHead').addEventListener('click',function(){
+    if(isAluno) return;
+    var c=document.getElementById('zonasCard'), fechado=!c.classList.contains('collapsed');
+    c.classList.toggle('collapsed',fechado);
+    var t=document.getElementById('zonasToggle'); t.textContent=fechado?'+':'−'; t.setAttribute('aria-expanded',fechado?'false':'true');
+  });
+  document.getElementById('zonasBody').addEventListener('change',async function(e){
+    if(isAluno) return;
+    var el=e.target;
+    if(el.id==='ztTipo'){ document.getElementById('ztCampos').innerHTML=camposTesteHtml(el.value); ztMsg(''); return; }
+    if(el.id==='ztDist'){ document.getElementById('ztOutraWrap').hidden = el.value!=='outra'; return; }
+    var k=el.getAttribute('data-perfil'); if(!k) return;
+    var v=el.value.trim();
+    state.perfil=state.perfil||{};
+    if(k==='sexo') state.perfil.sexo=v; else state.perfil[k]= v==='' ? '' : (+v||'');
+    await salvarZonas();
+  });
+  document.getElementById('zonasBody').addEventListener('click',async function(e){
+    if(isAluno) return;
+    if(e.target.id==='ztSalvar'){
+      var t=lerTesteDoForm();
+      if(typeof t==='string'){ ztMsg(t); return; }
+      if(!resultadoTeste(t,state.perfil)){ ztMsg('Não consegui calcular com esses valores. Confira os números.'); return; }
+      state.testes.push(t); await salvarZonas(); return;
+    }
+    var id=e.target.getAttribute('data-del-teste');
+    if(id && window.confirm('Excluir este teste? As zonas serão recalculadas.')){
+      state.testes=state.testes.filter(function(x){return x.id!==id;}); await salvarZonas();
+    }
+  });
+
   /* ---------------- Listeners gerais ---------------- */
   document.getElementById('fTypeSelect').addEventListener('change',function(){
     var other=document.getElementById('fTypeOther');
@@ -2017,7 +2327,8 @@
     }
     state=normalizeState({aluna:plano.aluna||'', defaultMode:plano.defaultMode||'cam',
                           workouts:plano.workouts||[], weekMeta:{}, tipos:[],
-                          semanaDestaque:(typeof plano.semanaDestaque==='number'?plano.semanaDestaque:null)});
+                          semanaDestaque:(typeof plano.semanaDestaque==='number'?plano.semanaDestaque:null),
+                          zonas:(plano.zonas&&typeof plano.zonas==='object'?plano.zonas:null)});
     var sub=document.querySelector('.brand .sub');
     if(sub) sub.textContent=(plano.aluna?plano.aluna+' · ':'')+'seus treinos';
     var note=document.getElementById('storeNote');
